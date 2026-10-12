@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>مساعد الفرزدق - الطالب</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1A2332">
+<link rel="stylesheet" href="css/style.css">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
+<!-- HUSSEIN_FARAZDAQ_SIGN:STUDENT_A9F2C1 -->
+<style>
+*{font-family:\'Tajawal\',sans-serif;box-sizing:border-box}
+body{margin:0;background:#FFFBF6;color:#1A2332}
+.header{background:#1A2332;color:#FFFBF6;padding:15px;text-align:center;position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:center;gap:8px}
+.card{background:white;margin:15px;padding:15px;border-radius:16px;box-shadow:0 4px 12px rgba(0,0,0,0.08);border-right:4px solid #A99B7C}
+.btn{background:#1A2332;color:white;padding:12px;border-radius:12px;border:none;width:100%;font-weight:800;cursor:pointer}
+.btn-gold{background:#A99B7C;color:#1A2332}
+input{width:100%;padding:12px;border-radius:10px;border:1px solid #ddd;margin-top:8px}
+.nav{position:fixed;bottom:0;width:100%;display:flex;background:#1A2332;justify-content:space-around;padding:10px 0;z-index:20}
+.nav button{background:none;border:none;color:#A99B7C;font-weight:700;font-size:13px}
+.nav button.active{color:#FFFBF6;border-top:2px solid #A99B7C}
+.exam-option{padding:12px;margin:8px 0;background:#FFFBF6;border:1px solid #A99B7C;border-radius:10px;cursor:pointer}
+.exam-option:active{transform:scale(0.97)}
+</style>
+</head>
+<body>
+
+<div id="login" class="card" style="margin-top:40px;max-width:420px;margin-left:auto;margin-right:auto">
+  <img src="assets/logo.png" style="width:90px;display:block;margin:auto">
+  <h2 style="text-align:center;margin:5px 0">مساعد الفرزدق</h2>
+  <p style="text-align:center;color:#A99B7C;font-size:13px">سجل دخولك بالاسم الثلاثي</p>
+  <input id="sName" placeholder="الاسم الثلاثي">
+  <input id="sPhone" placeholder="رقم الموبايل">
+  <button class="btn" style="margin-top:12px" onclick="login()">دخول</button>
+</div>
+
+<div id="app" style="display:none;padding-bottom:80px">
+  <div class="header"><img src="assets/logo.png" style="width:35px;background:white;border-radius:50%;padding:2px"> مساعد الفرزدق</div>
+  
+  <div id="p-profile" class="page">
+    <div class="card" style="text-align:center">
+      <img id="pImg" src="assets/logo.png" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid #A99B7C">
+      <h3 id="pName" style="margin:6px 0"></h3>
+      <p>نقاط الشهر: <b id="pPoints">0</b> / <span id="pTarget">300</span></p>
+      <p style="font-size:13px">امتحانات ممتحنة: <span id="pDone">0</span> | مفوتة: <span id="pMiss">0</span></p>
+      <input type="file" id="imgUpload" accept="image/*" style="margin-top:10px">
+    </div>
+    <div class="card" style="text-align:center">
+      <a id="developer-sign" href="https://hussein1labtop-jpg.github.io/Profile-/" target="_blank" style="display:block;text-align:center;color:#1A2332;font-size:13px;text-decoration:none;border:1px dashed #A99B7C;padding:10px;border-radius:10px;font-weight:800">لمحة عن التطبيق - تطوير حسين</a>
+      <p style="font-size:11px;color:#888">هذا الرابط محمي - حذفه يوقف التطبيق</p>
+    </div>
+  </div>
+
+  <div id="p-subjects" class="page" style="display:none">
+    <div class="card"><h3>اختر المادة</h3><div id="subjectsList"></div></div>
+    <div id="examBox" class="card" style="display:none">
+      <h4 id="qText"></h4><div id="qOptions"></div>
+      <p style="font-size:11px;color:#A99B7C">السؤال الخطأ يرجع لنهاية القائمة ولك محاولتين فقط - تحتاج 10 نقاط</p>
+    </div>
+  </div>
+
+  <div id="p-top" class="page" style="display:none"><div class="card"><h3>طلاب الشهر المتميزين</h3><div id="topList"></div></div></div>
+  
+  <div id="p-announce" class="page" style="display:none">
+    <div class="card"><h3>الجدول الاسبوعي</h3><img id="tableImg" src="assets/logo.png" style="width:100%;border-radius:12px"><div id="annList"></div></div>
+  </div>
+
+  <div class="nav">
+    <button onclick="showPage(\'p-profile\')" class="active">حسابي</button>
+    <button onclick="showPage(\'p-subjects\')">المواد</button>
+    <button onclick="showPage(\'p-top\')">طلاب الشهر</button>
+    <button onclick="showPage(\'p-announce\')">التبليغات</button>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="js/signature.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/app.js"></script>
+<script>if(\'serviceWorker\' in navigator) navigator.serviceWorker.register(\'sw.js\');</script>
+</body>
+</html>
