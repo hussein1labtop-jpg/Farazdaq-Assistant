@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>مساعد الفرزدق - الادارة</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1A2332">
+<link rel="stylesheet" href="css/style.css">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
+<!-- HUSSEIN_FARAZDAQ_SIGN:ADMIN_A9F2C1 -->
+<style>
+*{font-family:\'Tajawal\',sans-serif;box-sizing:border-box}
+body{margin:0;background:#FFFBF6;color:#1A2332}
+.header{background:#1A2332;color:#FFFBF6;padding:12px;text-align:center;position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-content:space-between}
+.card{background:white;margin:12px;padding:14px;border-radius:16px;box-shadow:0 4px 12px rgba(0,0,0,0.08);border-right:4px solid #A99B7C}
+.btn{background:#1A2332;color:white;padding:11px;border-radius:12px;border:none;width:100%;font-weight:800;cursor:pointer}
+.btn-gold{background:#A99B7C;color:#1A2332}
+input,select,textarea{width:100%;padding:11px;border-radius:10px;border:1px solid #ddd;margin-top:6px}
+.nav{position:fixed;bottom:0;width:100%;display:flex;background:#1A2332;justify-content:space-around;padding:8px 0;z-index:20;overflow-x:auto}
+.nav button{background:none;border:none;color:#A99B7C;font-weight:700;font-size:12px;white-space:nowrap;padding:6px 8px}
+.nav button.active{color:#FFFBF6;border-top:2px solid #A99B7C}
+.badge{background:#e11d48;color:white;padding:2px 6px;border-radius:10px;font-size:11px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border:1px solid #eee;padding:8px;text-align:center}
+th{background:#1A2332;color:white}
+.chat-box{height:55vh;overflow:auto;background:#FFFBF6;border:1px solid #eee;border-radius:12px;padding:10px}
+.sticker{width:80px;height:80px;object-fit:contain;cursor:pointer;border:1px solid #eee;border-radius:12px;background:white}
+</style>
+</head>
+<body>
+
+<div id="login" class="card" style="margin-top:30px;max-width:420px;margin-left:auto;margin-right:auto">
+  <img src="assets/logo.png" style="width:85px;display:block;margin:auto">
+  <h2 style="text-align:center;margin:5px 0">مساعد الفرزدق - الادارة</h2>
+  <p style="text-align:center;color:#A99B7C;font-size:13px">دخول الإدارة - اكتب اسم المستخدم فقط</p>
+  <input id="adminUser" placeholder="اسم المستخدم مثلا adminhussein">
+  <p style="font-size:11px;color:#888">السوبر: adminhussein | مدير المعهد: institute_admin | المدرسين: الاسم الي انت ضفته</p>
+  <button class="btn" style="margin-top:10px" onclick="loginAdmin()">دخول</button>
+  <p id="loginMsg" style="color:red;text-align:center;font-size:13px"></p>
+</div>
+
+<div id="app" style="display:none;padding-bottom:80px">
+  <div class="header">
+    <div style="display:flex;align-items:center;gap:8px"><img src="assets/logo.png" style="width:32px;background:white;border-radius:50%;padding:2px"><b id="hTitle">الادارة</b></div>
+    <div style="display:flex;gap:8px"><span id="hRole" class="badge"></span><button onclick="logout()" style="background:#A99B7C;border:none;border-radius:8px;padding:6px 10px;font-weight:700">خروج</button></div>
+  </div>
+
+  <div id="p-profile" class="page">
+    <div class="card" style="text-align:center">
+      <img id="pImg" src="assets/logo.png" style="width:85px;height:85px;border-radius:50%;object-fit:cover;border:3px solid #A99B7C">
+      <h3 id="pName" style="margin:6px 0"></h3>
+      <p id="pSub" style="color:#A99B7C;margin:0"></p>
+      <input type="file" id="imgUpload" accept="image/*">
+    </div>
+    <div id="superBox" class="card" style="display:none">
+      <h3>إضافة مدرس / مساعد - خاص بـ adminhussein فقط</h3>
+      <input id="newName" placeholder="اسم المدرس الثلاثي">
+      <input id="newUser" placeholder="اسم المستخدم للدخول">
+      <select id="newSubject">
+        <option>كيمياء</option><option>فيزياء</option><option>احياء</option><option>رياضيات</option><option>انكليزي</option><option>عربي</option>
+      </select>
+      <button class="btn btn-gold" style="margin-top:8px" onclick="addTeacher()">+ إضافة الحساب</button>
+      <div id="teachersList" style="margin-top:10px"></div>
+    </div>
+    <div class="card">
+      <h4>كل حسابات الادارة</h4>
+      <div id="allAdmins"></div>
+      <p style="font-size:12px;color:#888">تقدر تفتح محادثة ويا اي ادارة - الطلاب ما يكدرون يتواصلون بينهم</p>
+    </div>
+    <div class="card" style="text-align:center">
+      <a id="developer-sign" href="https://hussein1labtop-jpg.github.io/Profile-/" target="_blank" style="display:block;text-decoration:none;border:1px dashed #A99B7C;padding:10px;border-radius:10px;color:#1A2332;font-weight:800">لمحة عن التطبيق - تطوير حسين</a>
+      <p style="font-size:11px;color:#888">هذا الرابط محمي - حذفه يوقف التطبيق</p>
+    </div>
+  </div>
+
+  <div id="p-questions" class="page" style="display:none">
+    <div class="card">
+      <h3>إدارة الأسئلة</h3>
+      <select id="qSubject" onchange="renderQuestions()"></select>
+      <div id="qList" style="margin-top:10px"></div>
+      <hr>
+      <h4>إضافة سؤال جديد</h4>
+      <select id="qType" onchange="toggleQType()"><option value="اختيارات">اختيارات</option><option value="فراغ">فراغ</option><option value="جواب">جواب</option></select>
+      <textarea id="qText" placeholder="نص السؤال"></textarea>
+      <div id="optsBox"><input id="opt1" placeholder="اختيار 1"><input id="opt2" placeholder="اختيار 2"><input id="opt3" placeholder="اختيار 3"></div>
+      <input id="qAns" placeholder="الجواب الصحيح">
+      <button class="btn" style="margin-top:8px" onclick="addQuestion()">حفظ السؤال</button>
+    </div>
+  </div>
+
+  <div id="p-students" class="page" style="display:none">
+    <div class="card">
+      <h3>قوائم الطلاب - الشهر الحالي</h3>
+      <div style="display:flex;gap:6px"><input id="searchStu" placeholder="بحث بالاسم" oninput="renderStudents()"><button class="btn" style="width:auto" onclick="printPDF()">طباعة PDF</button></div>
+      <select id="filterSubject" onchange="renderStudents()" style="margin-top:6px"></select>
+      <div id="studentsTable" style="overflow:auto;margin-top:10px"></div>
+      <p style="font-size:11px;color:#A99B7C">العداد الذكي: الهدف = 300 × عدد المواد الفعالة | المفوت امتحان واحد مستحيل يوصل 300</p>
+    </div>
+  </div>
+
+  <div id="p-chats" class="page" style="display:none">
+    <div class="card">
+      <h3>محادثات الطلاب - حسب مادتك فقط</h3>
+      <div id="chatsList"></div>
+      <div id="chatWindow" style="display:none">
+        <div style="background:#fff3cd;border:1px solid #ffe69c;padding:8px;border-radius:10px;font-size:12px;text-align:center;margin:8px 0">⚠️ هذه المحادثة سيتم حذفها تلقائيا بعد 48 ساعة</div>
+        <div style="display:flex;justify-content:space-between"><b id="chatWith"></b><button onclick="closeChat()">إغلاق</button></div>
+        <div id="chatBox" class="chat-box"></div>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button onclick="toggleStickers()">😊 ستيكر</button>
+          <input id="msgInput" placeholder="اكتب رسالة..." style="flex:1">
+          <button class="btn" style="width:80px" onclick="sendMsg()">ارسال</button>
+        </div>
+        <div id="stickersPanel" style="display:none;background:white;border:1px solid #eee;border-radius:12px;padding:8px;margin-top:6px">
+          <div style="display:flex;gap:6px;flex-wrap:wrap" id="stickersGrid"></div>
+          <label style="display:block;margin-top:8px;background:#FFFBF6;border:1px dashed #A99B7C;padding:8px;border-radius:10px;text-align:center;cursor:pointer">+ اضافة ستيكر جديد <input type="file" id="stickerUpload" accept="image/*" hidden></label>
+          <p style="font-size:11px;color:#888">الستيكر ينضاف كـ ملصق صغير مو صورة كاملة مثل تليكرام</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="p-announce" class="page" style="display:none">
+    <div class="card">
+      <h3>الجدول والتبليغات</h3>
+      <p>صورة الجدول الاسبوعي (تظهر مثبتة فوق بتبليغات الطالب)</p>
+      <input type="file" id="tableUpload" accept="image/*"><img id="tablePreview" src="assets/logo.png" style="width:100%;border-radius:12px;margin-top:8px">
+      <textarea id="annText" placeholder="نص التبليغ"></textarea>
+      <button class="btn" onclick="addAnn()">نشر تبليغ</button>
+      <div id="annList" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div id="p-top" class="page" style="display:none">
+    <div class="card">
+      <h3>طلاب الشهر - التحكم</h3>
+      <p style="font-size:12px">فطحل 300 نقطة = 10 اسماء حسب الاسبقية | ممتاز 290 = 3 اسماء | جيد 280 = 3 اسماء | تتجدد كل شهر وتبقى معروضة للشهر القادم</p>
+      <div id="topAdminLists"></div>
+      <button class="btn btn-gold" onclick="downloadCertificate()">تحميل صورة تكريم للانستا - بلوكو المعهد</button>
+      <canvas id="certCanvas" width="1080" height="1350" style="display:none"></canvas>
+    </div>
+  </div>
+
+  <div class="nav">
+    <button onclick="showPage(\'p-profile\')" class="active">حسابي</button>
+    <button onclick="showPage(\'p-questions\')">الاسئلة</button>
+    <button onclick="showPage(\'p-students\')">الطلاب</button>
+    <button onclick="showPage(\'p-chats\')">المحادثات</button>
+    <button onclick="showPage(\'p-announce\')">التبليغات</button>
+    <button onclick="showPage(\'p-top\')">طلاب الشهر</button>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+<script src="js/signature.js"></script>
+<script src="js/firebase-config.js"></script>
+<script src="js/app.js"></script>
+<script>if(\'serviceWorker\' in navigator) navigator.serviceWorker.register(\'sw.js\');</script>
+</body>
+</html>
