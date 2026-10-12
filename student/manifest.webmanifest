@@ -1,0 +1,17 @@
+{
+  "name": "مساعد الفرزدق",
+  "short_name": "مساعد الفرزدق",
+  "description": "تطبيق الطالب – معهد الفرزدق",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#151a28",
+  "theme_color": "#151a28",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
