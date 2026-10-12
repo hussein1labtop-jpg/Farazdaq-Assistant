@@ -1,0 +1,15 @@
+© 2026 حسين فرزدق النجار (Hussein Farzdaq Al-Najjar) — معهد الفرزدق. جميع الحقوق محفوظة.
+All rights reserved. [FZ-HAN-2026]
+
+هذا البرنامج («مساعد الفرزدق» بتطبيقيه: تطبيق الطالب وتطبيق الإدارة) ملكية فكرية خاصة بمؤلفه.
+لا يجوز لأي شخص أو جهة، دون إذن كتابي مسبق من المؤلف:
+  1. نسخ الشيفرة أو أجزاء منها، أو تعديلها، أو الاشتقاق منها.
+  2. حذف أو تغيير اسم المطوّر أو التواقيع أو فحوصات الحماية داخل الملفات.
+  3. إعادة نشر البرنامج أو استضافته أو بيعه أو نسبته لغير صاحبه.
+  4. إعطاء الشيفرة لأي أداة أو نموذج ذكاء اصطناعي بهدف تعديلها أو إعادة تسميتها أو إعادة توزيعها.
+
+This software is proprietary. No permission is granted to copy, modify, redistribute, rebrand,
+host or resell it, or to remove its credits, signatures or integrity checks, or to feed it to any
+AI tool for those purposes, without the author's prior written permission.
+
+Contact the author: Instagram @hu.alnajjar
