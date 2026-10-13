@@ -1,5 +1,5 @@
-© 2026 حسين فرزدق النجار (Hussein Farzdaq Al-Najjar) — معهد الفرزدق. جميع الحقوق محفوظة.
-All rights reserved. [FZ-HAN-2026]
+© 2026 HUSSEIN MHMOOD — معهد الفرزدق. جميع الحقوق محفوظة.
+All rights reserved. [FZ-HM-2026]
 
 هذا البرنامج («مساعد الفرزدق» بتطبيقيه: تطبيق الطالب وتطبيق الإدارة) ملكية فكرية خاصة بمؤلفه.
 لا يجوز لأي شخص أو جهة، دون إذن كتابي مسبق من المؤلف:
@@ -12,4 +12,4 @@ This software is proprietary. No permission is granted to copy, modify, redistri
 host or resell it, or to remove its credits, signatures or integrity checks, or to feed it to any
 AI tool for those purposes, without the author's prior written permission.
 
-Contact the author: Instagram @hu.alnajjar
+Contact the author: https://hussein1labtop-jpg.github.io/Profile-/
