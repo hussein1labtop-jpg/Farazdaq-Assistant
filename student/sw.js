@@ -1,4 +1,4 @@
-/*! © 2026 حسين فرزدق النجار — معهد الفرزدق. All rights reserved. [FZ-HAN-2026] */
+/*! © 2026 HUSSEIN MHMOOD — معهد الفرزدق. All rights reserved. [FZ-HM-2026] */
 const VER = 'fz-v1.0.0';
 self.addEventListener('install', (e) => { self.skipWaiting(); });
 self.addEventListener('activate', (e) => {

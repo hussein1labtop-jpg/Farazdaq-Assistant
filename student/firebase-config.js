@@ -1,4 +1,4 @@
-/*! © 2026 حسين فرزدق النجار — معهد الفرزدق. All rights reserved. [FZ-HAN-2026] */
+/*! © 2026 HUSSEIN MHMOOD — معهد الفرزدق. All rights reserved. [FZ-HM-2026] */
 
 /* ضع هنا إعدادات مشروع Firebase الخاص بك (انظر ملف README.md – الخطوة 4).
    استبدل كل كلمة PASTE_HERE بالقيمة الصحيحة. نفس الإعدادات تُوضع في تطبيق الطالب وتطبيق الإدارة. */
@@ -10,3 +10,4 @@ export const firebaseConfig = {
   messagingSenderId: "363708393229",
   appId: "1:363708393229:web:a003cac6aa581850f17244"
 };
+
