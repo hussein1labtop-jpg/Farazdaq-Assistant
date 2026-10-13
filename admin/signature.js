@@ -1,4 +1,4 @@
-/*! © 2026 حسين فرزدق النجار (Hussein Farzdaq Al-Najjar) — معهد الفرزدق. جميع الحقوق محفوظة / All rights reserved. [FZ-HAN-2026]
+/*! © 2026  (HUSSEIN MHMOOD) — معهد الفرزدق. جميع الحقوق محفوظة / All rights reserved. [FZ-HAN-2026]
  *
  * PROPRIETARY SOFTWARE — "مساعد الفرزدق" (Al-Farzdaq Assistant).
  *
@@ -12,10 +12,10 @@
  */
 
 export const DEV = Object.freeze({
-  name: 'حسين فرزدق النجار',
-  title: 'مدرّس مادة الكيمياء',
+  name: 'HUSSEIN',
+  title: 'Developer',
   institute: 'معهد الفرزدق',
-  instagram: 'hu.alnajjar',
+  instagram: 'huha_2007',
   id: 'FZ-HAN-2026',
   year: 2026,
   version: '1.0.0',
