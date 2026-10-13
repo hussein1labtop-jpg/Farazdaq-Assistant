@@ -12,6 +12,7 @@ import { sfx, setSound, soundOn, confetti, buzz } from './fx.js';
 import { openChat } from './chat.js';
 import { loadSubjects, studentStats, tierOf, TIERS, ensureBoard, lastMonth, POINTS_PER_EXAM } from './stats.js';
 import { runExam } from './exam.js';
+import { pageHomework } from './homework.js';
 
 const S = { student: null, avatar: null, tab: 'profile', dots: {}, avCache: new Map(), timer: null };
 const view = $('#view');
@@ -98,7 +99,7 @@ function go(tab, silent = false) {
   clearInterval(S.timer);
   $$('#nav button').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
   view.innerHTML = '<div class="empty"><span class="big">⏳</span>جارٍ التحميل…</div>';
-  const pages = { profile: pageProfile, exam: pageExam, board: pageBoard, news: pageNews };
+  const pages = { profile: pageProfile, exam: pageExam, board: pageBoard, news: pageNews, hw: (cur) => pageHomework(cur, { student: S.student, view, go }) };
   pages[tab](() => my === tok).catch((e) => {
     console.error(e);
     if (my === tok) view.innerHTML = '<div class="empty"><span class="big">📡</span>تعذّر التحميل. تأكد من الإنترنت.<br><br><button class="btn" id="retry">إعادة المحاولة</button></div>';
