@@ -159,6 +159,16 @@ export function pickFile(accept = 'image/*') {
   });
 }
 
+export function pickFiles(accept = 'image/*') {
+  return new Promise((res) => {
+    const i = document.createElement('input');
+    i.type = 'file'; i.accept = accept; i.multiple = true;
+    i.onchange = () => res([...i.files]);
+    i.click();
+  });
+}
+export const homeworkImage = (f) => compressImage(f, { max: 1100, quality: 0.72, maxBytes: 150000 });
+
 /* ───────────── DOM / UI helpers ───────────── */
 export const $ = (s, r = document) => r.querySelector(s);
 export const $$ = (s, r = document) => [...r.querySelectorAll(s)];

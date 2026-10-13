@@ -11,7 +11,7 @@ import { sfx } from './fx.js';
 import { S, ROLES, refreshSubjects, refreshAdmins, loadAllAvatars, rows, subjectById } from './state.js';
 import { TIERS, getBoard, saveBoard, computeBoard, loadMonthData, lastMonth } from './stats.js';
 
-function subPage(title, build) {
+export function subPage(title, build) {
   const ov = fullscreen(`<div class="chat"><header class="chat-head"><button class="icon-btn back" aria-label="رجوع">➜</button><b style="font:700 19px var(--display)">${title}</b></header>
     <div class="sub-body" style="padding:14px 14px 40px;overflow:auto;flex:1"></div></div>`);
   $('.back', ov).onclick = () => { sfx.tap(); ov.close(); };

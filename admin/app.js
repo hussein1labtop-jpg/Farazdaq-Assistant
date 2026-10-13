@@ -13,6 +13,7 @@ import { openStudentChat, openAdminChat } from './chatrooms.js';
 import { pageQuestions } from './questions.js';
 import { pageStudents } from './students.js';
 import { openAnnouncements, openBoard, openUsers, openSubjects } from './manage.js';
+import { openHomework } from './homework.js';
 
 const view = $('#view');
 let tok = 0, tab = 'home', chatFilter = 'all', chatSearch = '';
@@ -201,6 +202,7 @@ function renderChatList() {
 /* ───────────── more ───────────── */
 async function pageMore() {
   const items = [
+    ['✏️', 'الواجبات', 'نشر الواجبات واستلام تسليمات الطلاب وتصحيحها', openHomework, true],
     ['📅', 'التبليغات وجدول الأسبوع', 'رفع جدول الأسبوع المثبّت ونشر تبليغات للطلاب', openAnnouncements, true],
     ['🏆', 'قائمة المتميزين', 'مراجعة قائمة الشهر وتبديل الأسماء', openBoard, true],
     ['👥', 'الحسابات', 'إضافة مدرّسين ومساعدين وإدارة المعهد', openUsers, isSuper()],
