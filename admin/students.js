@@ -42,7 +42,7 @@ export async function pageStudents(cur) {
   const [data] = await Promise.all([monthData(month), loadAllAvatars().catch(() => {})]);
   if (!cur()) return;
   const subs = statSubjects();
-  const target = totalTarget(subs, month);
+  const target = totalTarget(subs, month, data.examDays);
   let list = computeRows(data, subs, month);
   const flagged = list.filter((r) => r.st.needsFollowUp).length;
   const q = st.search.trim();

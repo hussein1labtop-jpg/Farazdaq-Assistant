@@ -14,6 +14,7 @@ import { pageQuestions } from './questions.js';
 import { pageStudents } from './students.js';
 import { openAnnouncements, openBoard, openUsers, openSubjects } from './manage.js';
 import { openHomework } from './homework.js';
+import { purgeAllExpired } from './homework-clean.js';
 
 const view = $('#view');
 let tok = 0, tab = 'home', chatFilter = 'all', chatSearch = '';
@@ -82,6 +83,7 @@ async function enter() {
   $$('#nav button').forEach((b) => (b.onclick = () => go(b.dataset.tab)));
   await Promise.all([refreshSubjects(), refreshAdmins()]).catch(() => {});
   watch();
+  purgeAllExpired().catch(() => {});
   go('home', true);
 }
 

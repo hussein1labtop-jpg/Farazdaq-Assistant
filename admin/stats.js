@@ -7,11 +7,10 @@ import {
 } from './core.js';
 
 export const POINTS_PER_EXAM = 10;
-export const MAX_DAYS = 30;           // monthly cap per subject = 10 points × 30 days = 300
 export const TIERS = [
   { id: 'fatahl', name: 'فطحل', icon: '👑', offset: 0, show: 10 },
-  { id: 'mumtaz', name: 'ممتاز', icon: '💎', offset: 10, show: 3 },
-  { id: 'jayyid', name: 'جيّد', icon: '⭐', offset: 20, show: 3 },
+  { id: 'mumtaz', name: 'ممتاز', icon: '💎', offset: 10, show: 5 },
+  { id: 'jayyid', name: 'جيّد', icon: '⭐', offset: 20, show: 5 },
 ];
 
 /* The days in `month` during which a subject counts (from its start date until it was switched off). */
@@ -23,15 +22,20 @@ export function subjectPeriod(sub, month) {
   return [start, end];
 }
 
-/* Monthly goal for one subject: 10 points per day, never more than 300. Adapts to late-added subjects. */
-export function subjectTarget(sub, month) {
+/* The exam days of a subject inside a month (only days that really have questions). */
+export function examDaysOf(sub, month, examDays) {
   const p = subjectPeriod(sub, month);
-  if (!p) return 0;
-  return POINTS_PER_EXAM * Math.min(MAX_DAYS, diffDays(p[0], p[1]) + 1);
+  if (!p) return [];
+  return examDays.filter((d) => d.subjectId === sub.id && d.month === month && d.count > 0 && d.date >= p[0] && d.date <= p[1]);
 }
 
-export function totalTarget(subjects, month) {
-  return subjects.reduce((s, x) => s + subjectTarget(x, month), 0);
+/* Monthly goal for one subject = 10 points for every day on which that subject had an exam. */
+export function subjectTarget(sub, month, examDays) {
+  return examDaysOf(sub, month, examDays).reduce((s, d) => s + Math.min(POINTS_PER_EXAM, d.count), 0);
+}
+
+export function totalTarget(subjects, month, examDays) {
+  return subjects.reduce((s, x) => s + subjectTarget(x, month, examDays), 0);
 }
 
 /**
@@ -42,7 +46,7 @@ export function studentStats(student, subjects, examDays, results, month, today)
   const mine = results.filter((r) => r.studentId === student.id && r.month === month);
   const out = { points: 0, target: 0, taken: 0, missed: 0, possible: 0, perSubject: {}, days: {} };
   for (const sub of subjects) {
-    const target = subjectTarget(sub, month);
+    const target = subjectTarget(sub, month, examDays);
     if (!target) continue;
     const per = { points: 0, target, taken: 0, missed: 0, possible: 0 };
     const from = [sub.startDate || '', student.joinedDate || '', monthStart(month)].sort().pop();
@@ -96,7 +100,7 @@ export async function loadMonthData(month) {
 
 /* ───────────── Board ───────────── */
 export function computeBoard(month, subjects, data, today = dkey()) {
-  const total = totalTarget(subjects, month);
+  const total = totalTarget(subjects, month, data.examDays);
   const tiers = Object.fromEntries(TIERS.map((t) => [t.id, []]));
   for (const s of data.students) {
     const st = studentStats(s, subjects, data.examDays, data.results, month, today);

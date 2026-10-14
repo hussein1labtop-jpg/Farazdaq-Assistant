@@ -9,6 +9,7 @@ import {
 import { SUPER_USERNAME } from './signature.js';
 import { sfx } from './fx.js';
 import { S, ROLES, refreshSubjects, refreshAdmins, loadAllAvatars, rows, subjectById } from './state.js';
+import { showPoster } from './poster.js';
 import { TIERS, getBoard, saveBoard, computeBoard, loadMonthData, lastMonth } from './stats.js';
 
 export function subPage(title, build) {
@@ -75,7 +76,7 @@ export function openBoard() {
         <button class="icon-btn" id="nm" ${month >= thisMonth ? 'disabled' : ''}>‹</button></div>
       ${board ? `<div class="card" style="margin-bottom:12px"><div class="kv"><span>الهدف الكلي</span><b>${board.total} نقطة</b></div>
         <div class="kv"><span>الحالة</span><b>${board.final ? 'نهائية' : 'معاينة (الشهر لم ينتهِ)'}</b></div>
-        <button class="btn small ghost" id="recalc" style="margin-top:8px">🔄 إعادة حساب القائمة</button></div>
+        <div class="row wrap" style="margin-top:8px"><button class="btn small" id="poster">🖼️ صورة التوب 20 للتحميل</button><button class="btn small ghost" id="recalc">🔄 إعادة حساب القائمة</button></div></div>
         ${board.total ? TIERS.map((t) => tierBlock(t, board)).join('') : '<div class="empty-s">لم تكن هناك مواد فعّالة في هذا الشهر.</div>'}`
         : `<div class="empty"><span class="big">🏆</span>لا توجد قائمة لهذا الشهر بعد.<br><br><button class="btn primary" id="calc">حساب القائمة</button></div>`}`;
     $('#pm', body).onclick = () => { month = addMonths(month, -1); draw(body); };
@@ -90,6 +91,7 @@ export function openBoard() {
     const c = $('#calc', body); if (c) c.onclick = run;
     const r = $('#recalc', body); if (r) r.onclick = async () => { if (await confirmBox('ستُحذف أي تعديلات يدوية وتُحسب القائمة من جديد. متابعة؟', { ok: 'إعادة الحساب' })) run(); };
     if (!board) return;
+    const pz = $('#poster', body); if (pz) pz.onclick = () => showPoster(board, month);
     $$('[data-rm]', body).forEach((b) => (b.onclick = async () => {
       const [tid, id] = b.dataset.rm.split('|');
       board.shown[tid] = board.shown[tid].filter((x) => x !== id);
@@ -182,7 +184,7 @@ export function openSubjects() {
         <span class="t grow">${esc(s.name)}<small>تبدأ من ${dayLabel(s.startDate)} ${s.active ? '' : '· <b style="color:var(--bad)">موقوفة</b>'}</small></span>
         <button class="btn small ghost" data-e="${s.id}">تعديل</button><button class="btn small ${s.active ? 'danger' : 'ok'}" data-t="${s.id}">${s.active ? 'إيقاف' : 'تفعيل'}</button></div>`).join('')
         || '<div class="empty"><span class="big">📚</span>لا توجد مواد. أضف أول مادة!</div>'}
-      <p class="muted" style="font-size:13px;margin-top:14px">عدّاد النقاط الشهري يتكيّف تلقائياً: كل مادة فعّالة = 10 نقاط × أيام الشهر منذ بدايتها (الحد الأقصى 300 للمادة). إضافة مادة ثانية في منتصف الشهر تزيد هدف الطالب بمقدار أيامها المتبقية فقط.</p>`;
+      <p class="muted" style="font-size:13px;margin-top:14px">هدف الطالب الشهري يتكيّف تلقائياً: لكل يوم فيه امتحان في مادة تُحسب 10 نقاط، ولا تُحسب الأيام التي لا امتحان فيها. مثال: 6 مواد بامتحان يومي لمدة 30 يوماً = 1800 نقطة.</p>`;
     $('#addS', body).onclick = () => subjectEditor(null, () => draw(body));
     $$('[data-e]', body).forEach((b) => (b.onclick = () => subjectEditor(subjectById(b.dataset.e), () => draw(body))));
     $$('[data-t]', body).forEach((b) => (b.onclick = async () => {
