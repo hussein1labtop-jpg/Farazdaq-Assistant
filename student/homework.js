@@ -8,6 +8,7 @@ import {
 } from './core.js';
 import { sfx, confetti, buzz } from './fx.js';
 import { loadSubjects } from './stats.js';
+import { isExpired, purgeExpired } from './homework-clean.js';
 
 const MAX_PAGES = 6;
 const rows = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -35,7 +36,9 @@ export async function pageHomework(cur, { student, view, go }) {
   if (!cur()) return;
   const active = Object.fromEntries(subjects.filter((s) => s.active).map((s, i) => [s.id, { ...s, i }]));
   const mine = Object.fromEntries(rows(subSnap).map((s) => [s.homeworkId, s]));
-  const list = rows(hwSnap).filter((h) => active[h.subjectId]);
+  const allHw = rows(hwSnap);
+  purgeExpired(allHw).catch(() => {});                // expired homework is removed automatically
+  const list = allHw.filter((h) => active[h.subjectId] && !isExpired(h));
   const rank = (h) => ({ overdue: 0, redo: 1, todo: 2, submitted: 3, reviewed: 4 }[statusOf(h, mine[h.id])]);
   list.sort((a, b) => rank(a) - rank(b) || (a.dueDate || '9').localeCompare(b.dueDate || '9') || b.createdAt - a.createdAt);
 
@@ -68,6 +71,11 @@ async function openHomework(hw, sub, subject, student, refresh) {
   let draftText = sub?.text || '';
   const st = statusOf(hw, sub);
   const canEdit = st !== 'reviewed';
+  const hwImgs = [];                    // the questions: one or many photos
+  if (hw.img) hwImgs.push(hw.img);
+  if (hw.imgCount) {
+    try { rows(await getDocs(query(collection(db, 'homeworks', hw.id, 'pages'), orderBy('i')))).forEach((p) => hwImgs.push(p.img)); } catch { /* ignore */ }
+  }
   if (sub && sub.pageCount) {
     try { images = rows(await getDocs(query(pagesCol, orderBy('i')))).map((p) => p.img); } catch { /* ignore */ }
   }
@@ -85,7 +93,7 @@ async function openHomework(hw, sub, subject, student, refresh) {
     body.innerHTML = `
       <div class="card"><div class="row" style="justify-content:space-between"><b>${esc(subject.emoji || '')} ${esc(subject.name)}</b><span class="badge ${BADGE[st][1]}">${BADGE[st][0]}</span></div>
         ${hw.desc ? `<div class="hw-desc">${esc(hw.desc)}</div>` : ''}
-        ${hw.img ? `<img src="${hw.img}" id="hwImg" alt="" style="width:100%;border-radius:12px">` : ''}
+        ${hwImgs.length ? `<div class="stack" style="margin:6px 0 10px">${hwImgs.map((s) => `<img class="hwq" src="${s}" alt="" style="width:100%;border-radius:12px;display:block">`).join('')}</div>` : ''}
         <small class="muted">${hw.dueDate ? 'آخر موعد: ' + dayLabel(hw.dueDate) : 'بدون موعد محدد'}</small></div>
       ${feedback}
       <h3 class="section-title">${sub ? 'تسليمك' : 'سلّم واجبك'}</h3>
@@ -97,7 +105,7 @@ async function openHomework(hw, sub, subject, student, refresh) {
         <p class="muted" style="font-size:12px;text-align:center;margin-top:8px">حتى ${MAX_PAGES} صور. صوّر بوضوح وفي ضوء جيد.</p>`
         : (sub?.text ? `<div class="card">${esc(sub.text)}</div>` : '')}`;
     $$('.thumb[data-i] img', body).forEach((im) => (im.onclick = () => zoom(im.src)));
-    const hi = $('#hwImg', body); if (hi) hi.onclick = () => zoom(hw.img);
+    $$('.hwq', body).forEach((im) => (im.onclick = () => zoom(im.src)));
     if (!canEdit) return;
     $$('[data-rm]', body).forEach((b) => (b.onclick = (e) => { e.stopPropagation(); draftText = $('#hwText', body).value; images.splice(+b.dataset.rm, 1); sfx.tap(); draw(); }));
     const add = $('#addImg', body);
