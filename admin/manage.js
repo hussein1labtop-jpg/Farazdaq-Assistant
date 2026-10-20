@@ -136,20 +136,22 @@ export function openUsers() {
     body.innerHTML = `<div class="card" style="margin-bottom:12px"><p class="muted" style="margin:0;font-size:14px">⚠ اسم المستخدم هو مفتاح الدخول الوحيد (بدون كلمة سر). اجعله طويلاً وغير متوقع ولا تعطه إلا لصاحبه. لحذف صلاحية أحد احذف حسابه وسيُخرَج عند فتح التطبيق.</p></div>
       <button class="btn primary block" id="addU" style="margin-bottom:14px">+ إضافة حساب جديد</button>
       ${list.map((a) => `<button class="list-item" data-u="${a.username}">${avatarHTML(a.photo, a.name)}<span class="t">${esc(a.name)}<small dir="ltr" style="text-align:start">${esc(a.username)}</small></span>
-        <span class="end"><span class="badge">${ROLES[a.role] || ''}</span><br><small>${a.role === 'teacher' || a.role === 'assistant' ? esc((a.subjectIds || []).map((id) => subjectById(id)?.name).filter(Boolean).join('، ')) : ''}</small></span></button>`).join('')}`;
+        <span class="end"><span class="badge">${ROLES[a.role] || ''}${a.fullAccess ? ' 🔑' : ''}</span><br><small>${a.role === 'teacher' || a.role === 'assistant' ? esc((a.subjectIds || []).map((id) => subjectById(id)?.name).filter(Boolean).join('، ')) : ''}</small></span></button>`).join('')}`;
     $('#addU', body).onclick = () => userEditor(null, () => draw(body));
     $$('[data-u]', body).forEach((b) => (b.onclick = () => userEditor(S.admins.find((x) => x.username === b.dataset.u), () => draw(body))));
   });
 }
 function userEditor(a, done) {
   const isNew = !a, isSup = a && a.username === SUPER_USERNAME;
-  const data = a ? { ...a } : { username: '', name: '', role: 'teacher', subjectIds: [] };
+  const data = a ? { ...a } : { username: '', name: '', role: 'teacher', subjectIds: [], fullAccess: false };
   const m = modal({ title: isNew ? 'حساب جديد' : 'تعديل الحساب', wide: true, body: `
     <label class="field"><span>اسم المستخدم (إنكليزي) ${isNew ? '' : '— لا يمكن تغييره'}</span>
       <div class="row"><input id="uu" dir="ltr" value="${esc(data.username)}" ${isNew ? '' : 'disabled'} autocapitalize="off">${isNew ? '<button class="btn small" id="gen" type="button">توليد</button>' : ''}</div></label>
     <label class="field"><span>الاسم الظاهر</span><input id="un" value="${esc(data.name)}" placeholder="مثال: الأستاذ علي"></label>
     ${isSup ? '' : `<label class="field"><span>الصلاحية</span><select id="ur"><option value="teacher" ${data.role === 'teacher' ? 'selected' : ''}>مدرّس (مادة محددة)</option><option value="assistant" ${data.role === 'assistant' ? 'selected' : ''}>مساعد (مادة محددة)</option><option value="institute" ${data.role === 'institute' ? 'selected' : ''}>إدارة المعهد (كل المواد + طباعة)</option></select></label>
-    <div class="field" id="subWrap"><span>المواد</span><div class="chips" style="flex-wrap:wrap">${S.subjects.map((s) => `<button type="button" class="chip ${data.subjectIds.includes(s.id) ? 'on' : ''}" data-sid="${s.id}">${esc(s.emoji || '')} ${esc(s.name)}</button>`).join('') || '<small class="muted">أضف مواد أولاً</small>'}</div></div>`}`,
+    <div class="field" id="subWrap"><span>المواد</span><div class="chips" style="flex-wrap:wrap">${S.subjects.map((s) => `<button type="button" class="chip ${data.subjectIds.includes(s.id) ? 'on' : ''}" data-sid="${s.id}">${esc(s.emoji || '')} ${esc(s.name)}</button>`).join('') || '<small class="muted">أضف مواد أولاً</small>'}</div></div>
+    <label class="row" id="faWrap" style="align-items:flex-start;margin-top:4px"><input type="checkbox" id="fa" ${data.fullAccess ? 'checked' : ''} style="width:24px;height:24px;accent-color:#2b3244;flex:none;margin-top:3px">
+      <span><b>🔑 صلاحيات الإدارة الكاملة</b><br><small class="muted">يحصل على نفس صلاحيات حساب إدارة المعهد: يرى كل المواد والطلاب والمحادثات والنتائج ويطبع التقارير. يبقى اسمه ودوره ومادته كما هي ظاهرة.</small></span></label>`}`,
     actions: [
       ...(!isNew && !isSup ? [{ label: 'حذف', kind: 'danger', onClick: async () => { if (!(await confirmBox(`حذف حساب ${esc(a.name)}؟`, { danger: true, ok: 'حذف' }))) return false; await deleteDoc(doc(db, 'admins', a.username)); done(); } }] : []),
       { label: 'إلغاء', kind: 'ghost' },
@@ -158,13 +160,14 @@ function userEditor(a, done) {
         if (!/^[a-z0-9_]{3,40}$/.test(username)) { toast('اسم المستخدم: أحرف إنكليزية وأرقام فقط (3 على الأقل)', 'bad'); return false; }
         if (name.length < 2) { toast('اكتب الاسم', 'bad'); return false; }
         const role = isSup ? 'super' : $('#ur', m.root).value;
+        const fullAccess = !isSup && role !== 'institute' && $('#fa', m.root).checked;
         const subjectIds = isSup ? [] : $$('#subWrap .chip.on', m.root).map((c) => c.dataset.sid);
         if ((role === 'teacher' || role === 'assistant') && !subjectIds.length) { toast('اختر مادة واحدة على الأقل', 'bad'); return false; }
         try {
           if (isNew) {
             if ((await getDoc(doc(db, 'admins', username))).exists()) { toast('اسم المستخدم مستخدم مسبقاً', 'bad'); return false; }
-            await setDoc(doc(db, 'admins', username), { username, name, role, subjectIds, createdAt: nowMs() });
-          } else await updateDoc(doc(db, 'admins', username), { name, role, subjectIds });
+            await setDoc(doc(db, 'admins', username), { username, name, role, subjectIds, fullAccess, createdAt: nowMs() });
+          } else await updateDoc(doc(db, 'admins', username), { name, role, subjectIds, fullAccess });
           sfx.pop(); toast('تم الحفظ ✓', 'ok'); done();
         } catch { toast('تعذّر الحفظ', 'bad'); return false; }
       } },
@@ -172,7 +175,7 @@ function userEditor(a, done) {
   const g = $('#gen', m.root); if (g) g.onclick = () => { $('#uu', m.root).value = genUsername(); };
   $$('#subWrap .chip', m.root).forEach((c) => (c.onclick = () => c.classList.toggle('on')));
   const r = $('#ur', m.root), w = $('#subWrap', m.root);
-  if (r) { const sync = () => (w.hidden = r.value === 'institute'); r.onchange = sync; sync(); }
+  if (r) { const fa = $('#faWrap', m.root); const sync = () => { w.hidden = r.value === 'institute'; fa.hidden = r.value === 'institute'; }; r.onchange = sync; sync(); }
 }
 
 /* ═════════════ subjects (developer only) ═════════════ */

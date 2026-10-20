@@ -12,7 +12,7 @@ export async function openStudentChat(c) {
   const ref = doc(db, 'chats', cid);
   let student = null;
   try { const s = await getDoc(doc(db, 'students', c.studentId)); if (s.exists()) student = { id: s.id, ...s.data() }; } catch { /* offline */ }
-  const team = S.admins.filter((a) => a.role === 'super' || a.role === 'institute' || (a.subjectIds || []).includes(c.subjectId))
+  const team = S.admins.filter((a) => a.role === 'super' || a.role === 'institute' || a.fullAccess || (a.subjectIds || []).includes(c.subjectId))
     .map((a) => esc(a.name)).join('، ');
   const extra = `<div class="row wrap" style="justify-content:space-between">
       <span>🎓 <b>${esc(c.studentName || student?.name || '')}</b>${student?.phone ? ` · <a href="tel:${esc(student.phone)}" style="direction:ltr;display:inline-block">${esc(student.phone)}</a>` : ''}</span>

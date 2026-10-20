@@ -7,7 +7,8 @@ import { loadSubjects } from './stats.js';
 export const S = { admin: null, subjects: [], admins: [], chats: [], adminChats: {}, avatars: new Map(), avatarsLoaded: false };
 export const ROLES = { super: 'المطوّر', institute: 'إدارة المعهد', teacher: 'مدرّس', assistant: 'مساعد' };
 export const isSuper = () => S.admin.role === 'super';
-export const isAll = () => S.admin.role === 'super' || S.admin.role === 'institute';
+/* full visibility: developer, institute admin, or any account the developer switched "full access" on for */
+export const isAll = () => S.admin.role === 'super' || S.admin.role === 'institute' || !!S.admin.fullAccess;
 export const mySubjects = () => (isAll() ? S.subjects : S.subjects.filter((s) => (S.admin.subjectIds || []).includes(s.id)));
 export const subjectById = (id) => S.subjects.find((s) => s.id === id);
 export const colorOf = (s, i = 0) => (s && s.color) || SUBJECT_COLORS[i % SUBJECT_COLORS.length];

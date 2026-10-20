@@ -9,6 +9,7 @@ import { sfx } from './fx.js';
 import { S, isAll, mySubjects, loadAllAvatars, printHTML, printHeader, printFooter, rows } from './state.js';
 import { loadMonthData, studentStats, tierOf, totalTarget } from './stats.js';
 import { openStudentChat } from './chatrooms.js';
+import { subPage } from './manage.js';
 
 const st = { month: null, sid: 'all', search: '', sort: 'name' };
 const cache = {};
@@ -60,11 +61,12 @@ export async function pageStudents(cur) {
     ${allSubs.length > 1 ? `<div class="chips"><button class="chip ${st.sid === 'all' ? 'on' : ''}" data-s="all">كل المواد</button>${allSubs.map((s) => `<button class="chip ${st.sid === s.id ? 'on' : ''}" data-s="${s.id}">${esc(s.emoji || '')} ${esc(s.name)}</button>`).join('')}</div>` : ''}
     <div class="row" style="margin-bottom:10px"><input class="input grow" id="sq" placeholder="🔍 ابحث بالاسم أو الرقم" value="${esc(st.search)}">
       <select class="select" id="so" style="width:auto"><option value="name" ${st.sort === 'name' ? 'selected' : ''}>الاسم</option><option value="points" ${st.sort === 'points' ? 'selected' : ''}>الأعلى نقاطاً</option><option value="low" ${st.sort === 'low' ? 'selected' : ''}>الأقل التزاماً</option></select></div>
+    ${month === thisMonth && dkey().slice(8) <= '10' ? `<button class="list-item" id="prevRep" style="margin-bottom:12px;background:rgba(201,181,122,.18)"><span class="av" style="background:var(--surface2)">📄</span><span class="t">تقرير شهر ${monthName(addMonths(thisMonth, -1))} جاهز<small>اضغط لفتح التقرير الشامل والتواصل مع أولياء الأمور</small></span></button>` : ''}
     <div class="row wrap" style="margin-bottom:12px;justify-content:space-between">
       <span class="muted">${data.students.length} طالب${flagged ? ` · <b style="color:var(--bad)">⚠ ${flagged} بحاجة متابعة</b>` : ''}</span>
-      <button class="btn small" id="prt">🖨️ طباعة PDF</button></div>
-    <div id="sl">${list.length ? list.map((r, i) => `<button class="list-item sr" data-i="${i}">${avatarHTML(S.avatars.get(r.s.id), r.s.name)}
-        <span class="grow"><span class="t">${esc(r.s.name)} ${r.st.needsFollowUp ? '<span class="badge bad">⚠ متابعة</span>' : ''}</span>
+      <span class="row"><button class="btn small ghost" id="rep">📄 التقرير الشهري</button><button class="btn small" id="prt">🖨️ طباعة PDF</button></span></div>
+    <div id="sl">${list.length ? list.map((r, i) => `<button class="list-item sr ${r.st.needsFollowUp ? 'row-flag' : ''}" data-i="${i}">${avatarHTML(S.avatars.get(r.s.id), r.s.name)}
+        <span class="grow"><span class="t ${r.st.needsFollowUp ? 'red-name' : ''}">${esc(r.s.name)} ${r.st.needsFollowUp ? '<span class="badge bad">⚠ تواصل مع ولي الأمر</span>' : ''}</span>
         <div class="bar ${pctClass(r.st.rate)}" style="margin:6px 0 3px"><i style="width:${r.st.target ? Math.min(100, (r.st.points / r.st.target) * 100) : 0}%"></i></div>
         <small>امتحن ${r.st.taken} · فاته ${r.st.missed} · التزام ${pctText(r.st.rate)}</small></span>
         <span class="end"><b style="font-size:20px">${r.st.points}</b><small>/ ${r.st.target}</small></span></button>`).join('')
@@ -76,12 +78,14 @@ export async function pageStudents(cur) {
   $('#sq').oninput = (e) => { st.search = e.target.value; clearTimeout(st._t); st._t = setTimeout(() => pageStudents(cur), 350); };
   $('#so').onchange = (e) => { st.sort = e.target.value; pageStudents(cur); };
   $$('.sr').forEach((b) => (b.onclick = () => { sfx.tap(); openStudentDetail(list[+b.dataset.i].s, { month, data, subs }); }));
+  $('#rep').onclick = () => openMonthlyReport(month, subs);
+  const pr = $('#prevRep'); if (pr) pr.onclick = () => openMonthlyReport(addMonths(thisMonth, -1));
   $('#prt').onclick = () => {
     const all = computeRows(data, subs, month).sort((a, b) => a.s.name.localeCompare(b.s.name, 'ar'));
     const scope = st.sid === 'all' ? (isAll() ? 'جميع المواد' : subs.map((s) => s.name).join('، ')) : subs[0].name;
     printHTML(`${printHeader('كشف نتائج الطلاب', `${monthName(month)} · ${scope} · الهدف ${target} نقطة`)}
       <table><thead><tr><th>#</th><th>اسم الطالب</th><th>الهاتف</th><th>النقاط</th><th>الهدف</th><th>امتحن</th><th>فاته</th><th>الالتزام</th><th>الفئة</th></tr></thead><tbody>
-      ${all.map((r, i) => `<tr class="${r.st.needsFollowUp ? 'flag' : ''}"><td>${i + 1}</td><td>${esc(r.s.name)}</td><td dir="ltr">${esc(r.s.phone || '')}</td><td>${r.st.points}</td><td>${r.st.target}</td><td>${r.st.taken}</td><td>${r.st.missed}</td><td>${pctText(r.st.rate)}</td><td>${tierOf(r.st.points, target)?.name || (r.st.needsFollowUp ? 'متابعة ولي الأمر' : '—')}</td></tr>`).join('')}
+      ${all.map((r, i) => `<tr class="${r.st.needsFollowUp ? 'flag' : ''}"><td>${i + 1}</td><td class="${r.st.needsFollowUp ? 'red' : ''}">${esc(r.s.name)}</td><td dir="ltr">${esc(r.s.phone || '')}</td><td>${r.st.points}</td><td>${r.st.target}</td><td>${r.st.taken}</td><td>${r.st.missed}</td><td>${pctText(r.st.rate)}</td><td>${tierOf(r.st.points, target)?.name || (r.st.needsFollowUp ? 'متابعة ولي الأمر' : '—')}</td></tr>`).join('')}
       </tbody></table>${printFooter()}`);
   };
 }
@@ -156,4 +160,50 @@ export async function openStudentDetail(student, ctx) {
     await deleteDoc(doc(db, 'students', student.id)); await deleteDoc(doc(db, 'avatars', student.id)).catch(() => {});
     delete cache[month]; toast('تم الحذف', 'ok'); m.close(); location.reload();
   };
+}
+
+/* ═════════════ monthly report: everyone, who sat the exams, who did not, and who must be followed up ═════════════ */
+export function openMonthlyReport(month, subsIn) {
+  subPage(`تقرير شهر ${monthName(month)}`, async function draw(body) {
+    body.innerHTML = '<div class="empty"><span class="big">⏳</span>جارٍ إعداد التقرير…</div>';
+    const [data] = await Promise.all([monthData(month, true), loadAllAvatars().catch(() => {})]);
+    const subs = subsIn || mySubjects();
+    const target = totalTarget(subs, month, data.examDays);
+    if (!target) { body.innerHTML = '<div class="empty"><span class="big">📭</span>لا توجد امتحانات في هذا الشهر.</div>'; return; }
+    const all = computeRows(data, subs, month).sort((a, b) => a.s.name.localeCompare(b.s.name, 'ar'));
+    const flagged = all.filter((r) => r.st.needsFollowUp).sort((a, b) => a.st.points - b.st.points);
+    const rest = all.filter((r) => !r.st.needsFollowUp).sort((a, b) => b.st.points - a.st.points);
+    const never = all.filter((r) => r.st.taken === 0).length;
+    const count = (id) => all.filter((r) => tierOf(r.st.points, target)?.id === id).length;
+    const pct = (r) => Math.round((r.st.points / r.st.target) * 100);
+    const perSub = (r) => subs.filter((s) => r.st.perSubject[s.id]).map((s) => `${esc(s.name)} ${r.st.perSubject[s.id].points}/${r.st.perSubject[s.id].target}`).join(' · ');
+    const status = (r) => tierOf(r.st.points, target)?.name || (r.st.needsFollowUp ? 'تواصل مع ولي الأمر' : '—');
+    const line = (r, red) => `<div class="list-item ${red ? 'row-flag' : ''}" style="align-items:flex-start;cursor:default">${avatarHTML(S.avatars.get(r.s.id), r.s.name)}
+      <span class="grow"><span class="t ${red ? 'red-name' : ''}">${esc(r.s.name)}</span>
+        <small>${r.st.points} / ${r.st.target} نقطة (${pct(r)}%) · امتحن ${r.st.taken} · فاته ${r.st.missed}${r.st.taken === 0 ? ' · <b>لم يمتحن إطلاقاً</b>' : ''}</small>
+        <small>${perSub(r)}</small></span>
+      ${red && r.s.phone ? `<span style="display:grid;gap:6px"><a class="btn small" href="tel:${esc(r.s.phone)}" aria-label="اتصال">📞</a><a class="btn small ok" href="${waLink(r.s.phone)}" target="_blank" rel="noopener" aria-label="واتساب">💬</a></span>` : ''}</div>`;
+
+    body.innerHTML = `
+      <div class="sum-grid">
+        <div class="sum"><b>${all.length}</b><small>طالب</small></div>
+        <div class="sum"><b>${all.length - never}</b><small>امتحنوا</small></div>
+        <div class="sum ${never ? 'red' : ''}"><b>${never}</b><small>لم يمتحنوا</small></div>
+        <div class="sum red"><b>${flagged.length}</b><small>بحاجة لولي الأمر</small></div>
+        <div class="sum"><b>${count('fatahl')}</b><small>👑 فطحل</small></div>
+        <div class="sum"><b>${count('mumtaz')}</b><small>💎 ممتاز</small></div>
+        <div class="sum"><b>${count('jayyid')}</b><small>⭐ جيّد</small></div>
+      </div>
+      <p class="muted" style="font-size:13px;margin:0 0 12px">الهدف الكلي ${target} نقطة. من حصل على نصف الهدف أو أقل (${Math.floor(target / 2)} نقطة) يظهر اسمه بالأحمر للتواصل مع ولي أمره.</p>
+      <div class="row wrap" style="margin-bottom:6px"><button class="btn small" id="pAll">🖨️ طباعة التقرير كاملاً</button>${flagged.length ? '<button class="btn small danger" id="pRed">🖨️ طباعة قائمة التواصل (الأحمر)</button>' : ''}</div>
+      ${flagged.length ? `<h3 class="section-title red-name">⚠ بحاجة للتواصل مع ولي الأمر (${flagged.length})</h3>${flagged.map((r) => line(r, true)).join('')}` : '<div class="card" style="text-align:center;margin-top:12px">🎉 لا يوجد طالب تحت النصف هذا الشهر</div>'}
+      <h3 class="section-title">بقية الطلاب (${rest.length})</h3>${rest.map((r) => line(r, false)).join('')}`;
+
+    const table = (list) => `<table><thead><tr><th>#</th><th>اسم الطالب</th><th>الهاتف</th><th>النقاط</th><th>من</th><th>النسبة</th><th>امتحن</th><th>فاته</th><th>حسب المادة</th><th>الحالة</th></tr></thead><tbody>
+      ${list.map((r, i) => `<tr class="${r.st.needsFollowUp ? 'flag' : ''}"><td>${i + 1}</td><td class="${r.st.needsFollowUp ? 'red' : ''}">${esc(r.s.name)}</td><td dir="ltr">${esc(r.s.phone || '')}</td><td>${r.st.points}</td><td>${r.st.target}</td><td>${pct(r)}%</td><td>${r.st.taken}</td><td>${r.st.missed}</td><td>${perSub(r)}</td><td class="${r.st.needsFollowUp ? 'red' : ''}">${status(r)}</td></tr>`).join('')}</tbody></table>`;
+    const head = (t) => printHeader(t, `${monthName(month)} · الهدف ${target} نقطة · ${all.length} طالب · امتحنوا ${all.length - never} · لم يمتحنوا ${never}`);
+    $('#pAll', body).onclick = () => printHTML(`${head('التقرير الشهري للطلاب')}${table([...flagged, ...rest])}${printFooter()}`);
+    const pr = $('#pRed', body);
+    if (pr) pr.onclick = () => printHTML(`${head('قائمة التواصل مع أولياء الأمور')}${table(flagged)}${printFooter()}`);
+  });
 }
