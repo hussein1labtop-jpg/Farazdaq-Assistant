@@ -5,16 +5,18 @@ import {
   db, configured, authReady, syncClock, nowMs, dkey, mkey, addDays, monthName, dayLabel, msToMidnight, fmtCountdown,
   collection, doc, getDoc, getDocs, setDoc, onSnapshot, query, where, orderBy, limit,
   esc, $, $$, el, ls, toast, modal, confirmBox, pickFile, avatarFromFile, avatarHTML, countUp,
-  nameWords, cleanPhone, studentIdFor, nameKey, SUBJECT_COLORS,
+  nameWords, cleanPhone, studentIdFor, nameKey, SUBJECT_COLORS, bindThemeButton,
 } from './core.js';
 import { DEV, startGuard } from './signature.js';
 import { sfx, setSound, soundOn, confetti, buzz } from './fx.js';
 import { openChat } from './chat.js';
 import { loadSubjects, studentStats, tierOf, TIERS, ensureBoard, lastMonth, POINTS_PER_EXAM } from './stats.js';
+import { alertUser, notifyCardHTML, bindNotifyCard, resumePush } from './notify.js';
 import { runExam } from './exam.js';
 import { pageHomework } from './homework.js';
 
-const S = { student: null, avatar: null, tab: 'profile', dots: {}, avCache: new Map(), timer: null };
+const S = { student: null, avatar: null, tab: 'profile', dots: {}, avCache: new Map(), timer: null, latest: { ann: null, sch: 0 } };
+let subjName = {};
 const view = $('#view');
 let tok = 0;
 
@@ -41,12 +43,14 @@ async function boot() {
 }
 
 function showMessage(icon, title, text, retry = false) {
+  document.body.classList.add('is-login');
   $('#loginHost').innerHTML = `<div class="login"><div class="login-card"><div style="font-size:64px">${icon}</div>
     <h1>${title}</h1><p class="sub">${text}</p>${retry ? '<button class="btn primary" onclick="location.reload()">إعادة المحاولة</button>' : ''}</div></div>`;
 }
 
 /* ───────────── login (first time only) ───────────── */
 function showLogin() {
+  document.body.classList.add('is-login'); scrollTo(0, 0);
   $('#topbar').hidden = true; $('#nav').hidden = true; view.innerHTML = '';
   const host = $('#loginHost');
   host.innerHTML = `<div class="login"><div class="login-card">
@@ -83,13 +87,17 @@ function showLogin() {
 
 /* ───────────── shell ───────────── */
 async function enter() {
+  document.body.classList.remove('is-login'); scrollTo(0, 0);
   $('#loginHost').innerHTML = '';
+  bindThemeButton($('#themeBtn'));
   $('#topbar').hidden = false; $('#nav').hidden = false;
   $('#soundBtn').textContent = soundOn() ? '🔊' : '🔇';
   $('#soundBtn').onclick = () => { setSound(!soundOn()); $('#soundBtn').textContent = soundOn() ? '🔊' : '🔇'; sfx.tap(); };
   $$('#nav button').forEach((b) => (b.onclick = () => go(b.dataset.tab)));
   getDoc(doc(db, 'avatars', S.student.id)).then((s) => { if (s.exists()) { S.avatar = s.data().img; if (S.tab === 'profile') go('profile', true); } }).catch(() => {});
   watchChats();
+  startAlerts();
+  resumePush('student:' + S.student.id);
   go('profile', true);
 }
 
@@ -117,7 +125,12 @@ function watchChats() {
     const nb = $('#nav [data-tab=profile]');
     nb.querySelector('.dot')?.remove();
     if (any) nb.appendChild(el('<span class="dot"></span>'));
-    if (!firstChatSnap && Object.keys(S.dots).some((k) => !prev[k])) { sfx.recv(); buzz(20); }
+    if (!firstChatSnap && !$('.chat-ov')) {
+      snap.docs.forEach((d) => {
+        const c = d.data();
+        if (c.studentUnread && !prev[c.subjectId]) alertUser(`إدارة مادة ${subjName[c.subjectId] || ''}`, c.lastMsg || 'رسالة جديدة', { tag: 'chat-' + d.id });
+      });
+    }
     firstChatSnap = false;
     $$('[data-chat-dot]').forEach((n) => (n.hidden = !S.dots[n.dataset.chatDot]));
   });
@@ -183,6 +196,7 @@ async function pageProfile(cur) {
       <span class="end"><span class="dot inline" data-chat-dot="${s.id}" ${S.dots[s.id] ? '' : 'hidden'}></span></span>
     </button>`).join('') : '<div class="empty-s">ستظهر هنا محادثات المواد عند إضافتها</div>'}
 
+  <div style="margin-top:16px" id="notifBox">${notifyCardHTML()}</div>
   ${!standalone ? `<div class="card" style="margin-top:18px;text-align:center"><b>ثبّت التطبيق على هاتفك 📲</b>
     <p class="muted" style="margin:6px 0 10px;font-size:14px">${installEvt ? 'اضغط الزر لإضافته إلى الشاشة الرئيسية.' : 'من متصفحك: القائمة ⋮ ← «إضافة إلى الشاشة الرئيسية» (في الآيفون: زر المشاركة ← إضافة إلى الشاشة الرئيسية).'}</p>
     ${installEvt ? '<button class="btn small" id="installBtn">تثبيت</button>' : ''}</div>` : ''}
@@ -202,6 +216,7 @@ async function pageProfile(cur) {
   };
   $$('.chat-open').forEach((b) => (b.onclick = () => { sfx.tap(); openStudentChat(active.find((s) => s.id === b.dataset.sid)); }));
   const ib = $('#installBtn'); if (ib) ib.onclick = async () => { installEvt.prompt(); installEvt = null; ib.remove(); };
+  bindNotifyCard(view, 'student:' + S.student.id, () => go('profile', true));
   $('#aboutBtn').onclick = about;
 }
 
@@ -325,10 +340,76 @@ async function pageNews(cur) {
     <h3 class="section-title">آخر التبليغات</h3>
     ${list.length ? list.map((p) => `<article class="post">${p.text ? `<p>${esc(p.text)}</p>` : ''}${p.img ? `<img src="${p.img}" alt="">` : ''}<time>${dayLabel(dkey(p.at))}</time></article>`).join('')
       : '<div class="empty-s">لا توجد تبليغات حالياً</div>'}`;
+  ls.set('annSeen', S.latest.ann); ls.set('schSeen', S.latest.sch); refreshNewsDot();
   const si = $('#schImg');
   if (si) si.onclick = () => {
     sfx.tap();
     const z = el(`<div class="zoom"><img src="${img}" alt=""></div>`);
     z.onclick = () => z.remove(); document.body.appendChild(z);
   };
+}
+
+/* ───────────── alerts: announcements, schedule, homework, daily exam, monthly results ───────────── */
+function refreshNewsDot() {
+  const nb = $('#nav [data-tab=news]'); if (!nb) return;
+  nb.querySelector('.dot')?.remove();
+  const fresh = (S.latest.ann && ls.get('annSeen') !== S.latest.ann) || (S.latest.sch && ls.get('schSeen') !== S.latest.sch);
+  if (fresh && S.tab !== 'news') nb.appendChild(el('<span class="dot"></span>'));
+}
+
+function startAlerts() {
+  loadSubjects().then((l) => { subjName = Object.fromEntries(l.map((s) => [s.id, s.name])); }).catch(() => {});
+  onSnapshot(query(collection(db, 'announcements'), orderBy('at', 'desc'), limit(1)), (snap) => {
+    const d = snap.docs[0]; if (!d) return;
+    const prev = ls.get('annAlerted');
+    if (prev && prev !== d.id) alertUser('📣 تبليغ جديد', (d.data().text || 'صورة').slice(0, 90), { tag: 'ann-' + d.id });
+    ls.set('annAlerted', d.id); S.latest.ann = d.id; refreshNewsDot();
+  }, () => {});
+  onSnapshot(doc(db, 'settings', 'schedule'), (s) => {
+    const at = s.exists() ? s.data().updatedAt || 0 : 0;
+    const prev = ls.get('schAlerted');
+    if (prev && at && prev !== at) alertUser('📅 تم تحديث جدول الأسبوع', 'اضغط لمشاهدته', { tag: 'sched' });
+    if (at) ls.set('schAlerted', at);
+    S.latest.sch = at; refreshNewsDot();
+  }, () => {});
+  onSnapshot(query(collection(db, 'homeworks'), orderBy('createdAt', 'desc'), limit(1)), (snap) => {
+    const d = snap.docs[0]; if (!d) return;
+    const prev = ls.get('hwAlerted');
+    if (prev && prev !== d.id) alertUser('✏️ واجب جديد', d.data().title || '', { tag: 'hw-' + d.id });
+    ls.set('hwAlerted', d.id);
+  }, () => {});
+
+  checkExamStart(); checkBoard();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkExamStart(); checkBoard(); } });
+  let day = dkey();
+  setInterval(() => { if (dkey() !== day) { day = dkey(); checkExamStart(); checkBoard(); } }, 30000);
+}
+
+async function checkExamStart() {
+  const today = dkey();
+  if (ls.get('examAlert') === today) return;
+  try {
+    const [subjects, eds, mine] = await Promise.all([
+      loadSubjects(),
+      getDocs(query(collection(db, 'examDays'), where('date', '==', today))),
+      getDocs(query(collection(db, 'results'), where('studentId', '==', S.student.id))),
+    ]);
+    const active = new Set(subjects.filter((s) => s.active).map((s) => s.id));
+    const done = new Set(rows(mine).filter((r) => r.date === today && r.status === 'done').map((r) => r.subjectId));
+    const open = rows(eds).filter((d) => d.count > 0 && active.has(d.subjectId) && !done.has(d.subjectId));
+    if (!open.length) return;
+    ls.set('examAlert', today);
+    alertUser('🧠 بدأ امتحان اليوم', open.length > 1 ? `لديك ${open.length} امتحانات بانتظارك` : 'ادخل واجمع نقاطك!', { tag: 'exam-' + today });
+  } catch { /* offline */ }
+}
+
+async function checkBoard() {
+  const m = lastMonth();
+  if (ls.get('boardAlert') === m) return;
+  try {
+    const b = await ensureBoard(m);
+    if (!b) return;
+    ls.set('boardAlert', m);
+    if (b.total) alertUser(`🏆 ظهرت نتائج شهر ${monthName(m)}`, 'اضغط لمشاهدة المتميزين', { tag: 'board-' + m });
+  } catch { /* offline */ }
 }

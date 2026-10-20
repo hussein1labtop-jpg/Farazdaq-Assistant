@@ -70,7 +70,10 @@ export function studentStats(student, subjects, examDays, results, month, today)
     out.missed += per.missed; out.possible += per.possible;
   }
   out.rate = out.possible > 0 ? out.points / out.possible : null;      // commitment so far
-  out.needsFollowUp = out.possible >= 50 && out.rate !== null && out.rate <= 0.5;
+  /* finished month: half of the whole target or less → contact the parent. Running month: judged on what was possible so far. */
+  out.needsFollowUp = today > monthEnd(month)
+    ? out.target > 0 && out.points <= out.target * 0.5
+    : out.possible >= 50 && out.rate !== null && out.rate <= 0.5;
   return out;
 }
 

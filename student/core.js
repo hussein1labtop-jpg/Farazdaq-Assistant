@@ -11,9 +11,10 @@ import { cyrb53 } from './signature.js';
 /* ───────────── Firebase ───────────── */
 export const configured = !/PASTE/.test(JSON.stringify(firebaseConfig));
 export let db = null;
+export let app = null;
 let auth = null;
 if (configured) {
-  const app = initializeApp(firebaseConfig);
+  app = initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
 }
@@ -24,6 +25,19 @@ export const authReady = configured
     })
   : Promise.reject(new Error('not-configured'));
 authReady.catch(() => {});
+
+/* ───────────── Theme (day / night, both built from the institute's logo colours) ───────────── */
+export const getTheme = () => document.documentElement.dataset.theme || 'dark';
+export function setTheme(t) {
+  document.documentElement.dataset.theme = t; ls.set('theme', t);
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.content = t === 'dark' ? '#151a28' : document.body.classList.contains('admin') ? '#2b3244' : '#fbf8ef';
+}
+export function bindThemeButton(btn) {
+  const paint = () => { btn.textContent = getTheme() === 'dark' ? '☀️' : '🌙'; btn.title = getTheme() === 'dark' ? 'الوضع النهاري' : 'الوضع الليلي'; };
+  paint();
+  btn.onclick = () => { setTheme(getTheme() === 'dark' ? 'light' : 'dark'); paint(); };
+}
 
 /* ───────────── Time (Baghdad, UTC+3, synced with the server clock) ───────────── */
 const TZ = 3 * 3600e3;
