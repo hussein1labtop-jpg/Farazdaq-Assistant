@@ -5,7 +5,7 @@ import {
   db, configured, authReady, syncClock, nowMs, dkey, mkey, addDays, monthName, dayLabel, msToMidnight, fmtCountdown,
   collection, doc, getDoc, getDocs, setDoc, onSnapshot, query, where, orderBy, limit,
   esc, $, $$, el, ls, toast, modal, confirmBox, pickFile, avatarFromFile, avatarHTML, countUp,
-  nameWords, cleanPhone, studentIdFor, nameKey, SUBJECT_COLORS, bindThemeButton,
+  nameWords, cleanPhone, studentIdFor, nameKey, SUBJECT_COLORS, bindThemeButton, updateDoc, GROUPS, groupLabel, inAudience,
 } from './core.js';
 import { DEV, startGuard } from './signature.js';
 import { sfx, setSound, soundOn, confetti, buzz } from './fx.js';
@@ -35,7 +35,7 @@ async function boot() {
   if (id) {
     try {
       const s = await getDoc(doc(db, 'students', id));
-      if (s.exists()) { S.student = { id, ...s.data() }; return enter(); }
+      if (s.exists()) { S.student = { id, ...s.data() }; return S.student.gender ? enter() : askGender(); }
       ls.del('student');
     } catch (e) { return showMessage('📡', 'تعذّر الاتصال', 'تأكد من الإنترنت ثم أعد المحاولة.', true); }
   }
@@ -59,21 +59,28 @@ function showLogin() {
     <p class="sub">امتحن نفسك كل يوم، اجمع الجواهر، وادخل قائمة المتميزين 💎</p>
     <label class="field"><span>اسمك الثلاثي</span><input id="lgName" autocomplete="name" placeholder="مثال: علي حسن محمد"></label>
     <label class="field"><span>رقم هاتفك</span><input id="lgPhone" inputmode="tel" autocomplete="tel" placeholder="07xxxxxxxxx"></label>
+    <div class="field"><span>المجموعة</span><div class="seg" id="lgGender" style="margin:0"><button type="button" data-g="boys">👦 ولد</button><button type="button" data-g="girls">👧 بنات</button></div></div>
     <div class="err" id="lgErr"></div>
     <button class="btn primary block" id="lgGo">ابدأ التحدي 🚀</button>
   </div></div>`;
+  let gender = null;
+  $$('#lgGender button').forEach((b) => (b.onclick = () => { gender = b.dataset.g; sfx.tap(); $$('#lgGender button').forEach((x) => x.classList.toggle('on', x === b)); }));
   $('#lgGo').onclick = async () => {
     const name = $('#lgName').value.trim().replace(/\s+/g, ' '), phone = cleanPhone($('#lgPhone').value);
     const err = $('#lgErr');
     if (nameWords(name).length < 3) { err.textContent = 'اكتب اسمك الثلاثي كاملاً (ثلاث كلمات على الأقل)'; sfx.error(); return; }
     if (phone.length < 10) { err.textContent = 'اكتب رقم هاتف صحيح'; sfx.error(); return; }
+    if (!gender) { err.textContent = 'اختر مجموعتك: ولد أو بنات'; sfx.error(); return; }
     const btn = $('#lgGo'); btn.disabled = true; err.textContent = '';
     try {
       const id = studentIdFor(name, phone);
       const ref = doc(db, 'students', id);
       let s = await getDoc(ref);
       if (!s.exists()) {
-        await setDoc(ref, { name, nameKey: nameKey(name), phone, joinedDate: dkey(), createdAt: nowMs() });
+        await setDoc(ref, { name, nameKey: nameKey(name), phone, gender, joinedDate: dkey(), createdAt: nowMs() });
+        s = await getDoc(ref);
+      } else if (!s.data().gender) {
+        await updateDoc(ref, { gender });
         s = await getDoc(ref);
       }
       ls.set('student', id);
@@ -83,6 +90,23 @@ function showLogin() {
       enter();
     } catch (e) { err.textContent = 'تعذّر الدخول، تأكد من الإنترنت وحاول مرة ثانية'; btn.disabled = false; }
   };
+}
+
+/* accounts created before the boys/girls groups existed must pick one once */
+function askGender() {
+  document.body.classList.add('is-login'); scrollTo(0, 0);
+  $('#topbar').hidden = true; $('#nav').hidden = true;
+  $('#loginHost').innerHTML = `<div class="login"><div class="login-card">
+    <div class="mark"><img src="logo.png" alt=""></div><h1>اختر مجموعتك</h1>
+    <p class="sub">مرة واحدة فقط، لتصلك الواجبات والتبليغات الخاصة بمجموعتك.</p>
+    <div class="stack"><button class="btn primary block" data-g="boys">👦 ولد</button><button class="btn primary block" data-g="girls">👧 بنات</button></div>
+    <div class="err" id="gErr"></div></div></div>`;
+  $$('#loginHost [data-g]').forEach((b) => (b.onclick = async () => {
+    try {
+      await updateDoc(doc(db, 'students', S.student.id), { gender: b.dataset.g });
+      S.student.gender = b.dataset.g; sfx.start(); enter();
+    } catch { $('#gErr').textContent = 'تعذّر الحفظ، تأكد من الإنترنت'; }
+  }));
 }
 
 /* ───────────── shell ───────────── */
@@ -173,7 +197,7 @@ async function pageProfile(cur) {
       <button id="avBtn" aria-label="تغيير الصورة" style="position:relative">${avatarHTML(S.avatar, S.student.name, 'big')}<span style="position:absolute;bottom:-4px;inset-inline-end:-4px;background:var(--gold);color:var(--ink);border-radius:10px;padding:1px 6px;font-size:13px">📷</span></button>
       <div class="grow"><h2 style="font-size:23px">${esc(S.student.name)}</h2>
         <div class="muted" style="direction:ltr;text-align:start">${esc(S.student.phone || '')}</div>
-        <span class="chip ${tier ? 'on' : ''}" style="margin-top:6px">${tier ? tier.icon + ' ' + tier.name : 'اجمع نقاطك 💪'}</span></div>
+        <span class="chip ${tier ? 'on' : ''}" style="margin-top:6px">${tier ? tier.icon + ' ' + tier.name : 'اجمع نقاطك 💪'}</span> <span class="chip" style="margin-top:6px">${groupLabel(S.student.gender)}</span></div>
     </div>
     <div class="ring-wrap" style="margin-top:14px;position:relative;z-index:1">
       <svg viewBox="0 0 150 150"><circle class="track" cx="75" cy="75" r="64" fill="none" stroke-width="14"/>
@@ -327,13 +351,16 @@ async function pageBoard(cur) {
 
 /* ───────────── announcements ───────────── */
 async function pageNews(cur) {
-  const [sch, posts] = await Promise.all([
-    getDoc(doc(db, 'settings', 'schedule')),
-    getDocs(query(collection(db, 'announcements'), orderBy('at', 'desc'), limit(30))),
+  const g = S.student.gender;
+  const [sch0, schOld, posts] = await Promise.all([
+    getDoc(doc(db, 'settings', 'schedule_' + g)),
+    getDoc(doc(db, 'settings', 'schedule')),                       // older single schedule (fallback)
+    getDocs(query(collection(db, 'announcements'), orderBy('at', 'desc'), limit(60))),
   ]);
   if (!cur()) return;
+  const sch = sch0.exists() ? sch0 : schOld;
   const img = sch.exists() ? sch.data().img : null;
-  const list = rows(posts);
+  const list = rows(posts).filter((p) => inAudience(p, g)).slice(0, 30);
   view.innerHTML = `<h1 class="page-title">التبليغات 📣</h1>
     ${img ? `<div class="sched"><div class="cap"><span>📅 جدول الأسبوع</span><small class="muted">اضغط للتكبير</small></div><img id="schImg" src="${img}" alt="جدول الأسبوع"></div>`
       : '<div class="sched"><div class="cap"><span>📅 جدول الأسبوع</span></div><div class="empty-s">لم يُرفع الجدول بعد</div></div>'}
@@ -359,21 +386,22 @@ function refreshNewsDot() {
 
 function startAlerts() {
   loadSubjects().then((l) => { subjName = Object.fromEntries(l.map((s) => [s.id, s.name])); }).catch(() => {});
-  onSnapshot(query(collection(db, 'announcements'), orderBy('at', 'desc'), limit(1)), (snap) => {
-    const d = snap.docs[0]; if (!d) return;
+  const g = S.student.gender;
+  onSnapshot(query(collection(db, 'announcements'), orderBy('at', 'desc'), limit(15)), (snap) => {
+    const d = snap.docs.find((x) => inAudience(x.data(), g)); if (!d) return;
     const prev = ls.get('annAlerted');
     if (prev && prev !== d.id) alertUser('📣 تبليغ جديد', (d.data().text || 'صورة').slice(0, 90), { tag: 'ann-' + d.id });
     ls.set('annAlerted', d.id); S.latest.ann = d.id; refreshNewsDot();
   }, () => {});
-  onSnapshot(doc(db, 'settings', 'schedule'), (s) => {
+  onSnapshot(doc(db, 'settings', 'schedule_' + g), (s) => {
     const at = s.exists() ? s.data().updatedAt || 0 : 0;
     const prev = ls.get('schAlerted');
     if (prev && at && prev !== at) alertUser('📅 تم تحديث جدول الأسبوع', 'اضغط لمشاهدته', { tag: 'sched' });
     if (at) ls.set('schAlerted', at);
     S.latest.sch = at; refreshNewsDot();
   }, () => {});
-  onSnapshot(query(collection(db, 'homeworks'), orderBy('createdAt', 'desc'), limit(1)), (snap) => {
-    const d = snap.docs[0]; if (!d) return;
+  onSnapshot(query(collection(db, 'homeworks'), orderBy('createdAt', 'desc'), limit(15)), (snap) => {
+    const d = snap.docs.find((x) => inAudience(x.data(), g)); if (!d) return;
     const prev = ls.get('hwAlerted');
     if (prev && prev !== d.id) alertUser('✏️ واجب جديد', d.data().title || '', { tag: 'hw-' + d.id });
     ls.set('hwAlerted', d.id);

@@ -10,6 +10,21 @@ import { POINTS_PER_EXAM } from './stats.js';
 
 const TYPE_LABEL = { mcq: 'اختر الإجابة الصحيحة', tf: 'صح أم خطأ؟', fill: 'أكمل الفراغ', short: 'اكتب الإجابة' };
 
+/* The exam of a day = every question of the question-groups chosen for that day (they are linked, not copied,
+   so editing a group updates all days that use it) + older questions that were added directly to the day. */
+async function loadExamQuestions(subjectId, date) {
+  const out = {};
+  const ex = await getDoc(doc(db, 'exams', `${subjectId}_${date}`));
+  const gids = ex.exists() ? ex.data().groupIds || [] : [];
+  for (let i = 0; i < gids.length; i += 30) {
+    const snap = await getDocs(query(collection(db, 'questions'), where('groupId', 'in', gids.slice(i, i + 30))));
+    snap.docs.forEach((d) => { out[d.id] = { id: d.id, ...d.data() }; });
+  }
+  const legacy = await getDocs(query(collection(db, 'questions'), where('dayKey', '==', `${subjectId}_${date}`)));
+  legacy.docs.forEach((d) => { out[d.id] = { id: d.id, ...d.data() }; });
+  return out;
+}
+
 /*
  Exam rules (as designed by the teacher):
   • one exam per subject per day (12:00 AM → 11:59 PM, Baghdad time)
@@ -23,10 +38,9 @@ export async function runExam({ student, subject, color }) {
   const rid = `${student.id}_${subject.id}_${date}`;
   const ref = doc(db, 'results', rid);
 
-  let qSnap;
-  try { qSnap = await getDocs(query(collection(db, 'questions'), where('dayKey', '==', dayKey))); }
+  let qs;
+  try { qs = await loadExamQuestions(subject.id, date); }
   catch { toast('تعذّر تحميل الأسئلة، تأكد من الإنترنت', 'bad'); return; }
-  const qs = Object.fromEntries(qSnap.docs.map((d) => [d.id, { id: d.id, ...d.data() }]));
   if (!Object.keys(qs).length) { toast('لا توجد أسئلة لهذا اليوم بعد'); return; }
 
   let state, cur = await getDoc(ref);

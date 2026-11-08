@@ -4,7 +4,7 @@
 import {
   db, collection, doc, getDocs, setDoc, deleteDoc, query, where, orderBy, limit,
   nowMs, dkey, diffDays, dayLabel, esc, $, $$, el, toast, fullscreen, confirmBox,
-  pickFiles, homeworkImage, SUBJECT_COLORS,
+  pickFiles, homeworkImage, SUBJECT_COLORS, inAudience,
 } from './core.js';
 import { sfx, confetti, buzz } from './fx.js';
 import { loadSubjects } from './stats.js';
@@ -38,7 +38,7 @@ export async function pageHomework(cur, { student, view, go }) {
   const mine = Object.fromEntries(rows(subSnap).map((s) => [s.homeworkId, s]));
   const allHw = rows(hwSnap);
   purgeExpired(allHw).catch(() => {});                // expired homework is removed automatically
-  const list = allHw.filter((h) => active[h.subjectId] && !isExpired(h));
+  const list = allHw.filter((h) => active[h.subjectId] && !isExpired(h) && inAudience(h, student.gender));
   const rank = (h) => ({ overdue: 0, redo: 1, todo: 2, submitted: 3, reviewed: 4 }[statusOf(h, mine[h.id])]);
   list.sort((a, b) => rank(a) - rank(b) || (a.dueDate || '9').localeCompare(b.dueDate || '9') || b.createdAt - a.createdAt);
 
