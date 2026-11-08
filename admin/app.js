@@ -12,7 +12,7 @@ import { S, ROLES, isAll, isSuper, mySubjects, subjectById, colorOf, refreshSubj
 import { openStudentChat, openAdminChat } from './chatrooms.js';
 import { pageQuestions } from './questions.js';
 import { pageStudents } from './students.js';
-import { openAnnouncements, openBoard, openUsers, openSubjects } from './manage.js';
+import { CHANNEL_LIST, openChannel, openBoard, openUsers, openSubjects } from './manage.js';
 import { openHomework } from './homework.js';
 import { alertUser, notifyCardHTML, bindNotifyCard, resumePush } from './notify.js';
 import { purgeAllExpired } from './homework-clean.js';
@@ -221,7 +221,7 @@ function renderChatList() {
 async function pageMore() {
   const items = [
     ['✏️', 'الواجبات', 'نشر الواجبات واستلام تسليمات الطلاب وتصحيحها', openHomework, true],
-    ['📅', 'التبليغات وجدول الأسبوع', 'رفع جدول الأسبوع المثبّت ونشر تبليغات للطلاب', openAnnouncements, true],
+    ...CHANNEL_LIST.map((c) => [c.icon, c.title, c.key === 'all' ? 'تبليغات تصل تلقائياً للولد والبنات معاً' : `نشر التبليغات وجدول الأسبوع لمجموعة ${c.key === 'boys' ? 'الولد' : 'البنات'}`, () => openChannel(c.key), true]),
     ['🏆', 'قائمة المتميزين', 'مراجعة قائمة الشهر وتبديل الأسماء', openBoard, true],
     ['👥', 'الحسابات', 'إضافة مدرّسين ومساعدين وإدارة المعهد', openUsers, isSuper()],
     ['📚', 'المواد', 'إضافة مادة جديدة أو إيقافها', openSubjects, isSuper()],

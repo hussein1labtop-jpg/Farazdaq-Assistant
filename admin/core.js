@@ -250,6 +250,11 @@ export function countUp(node, to, ms = 700) {
   requestAnimationFrame(step);
 }
 
+/* boys / girls groups: homework, announcements and schedules are published to one group or to everybody */
+export const GROUPS = { boys: { icon: '👦', name: 'ولد' }, girls: { icon: '👧', name: 'بنات' } };
+export const groupLabel = (g) => (GROUPS[g] ? `${GROUPS[g].icon} ${GROUPS[g].name}` : '—');
+export const inAudience = (item, gender) => { const a = item.audience || 'all'; return a === 'all' || a === gender; };
+
 export const initials = (n) => (nameWords(n)[0] || '؟').charAt(0);
 export function avatarHTML(src, name, cls = '') {
   return src

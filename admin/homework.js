@@ -4,7 +4,7 @@
 import {
   db, collection, doc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, writeBatch, query, where, orderBy,
   nowMs, dkey, addDays, dayLabel, fmtClock, secOfDay, esc, $, $$, el, toast, modal, confirmBox,
-  pickFiles, homeworkImage, avatarHTML,
+  pickFiles, homeworkImage, avatarHTML, inAudience,
 } from './core.js';
 import { sfx } from './fx.js';
 import { S, mySubjects, subjectById, rows, loadAllAvatars } from './state.js';
@@ -14,6 +14,7 @@ import { isExpired, deleteHomework, purgeAllExpired, lastKeepDay } from './homew
 const STATUS = {
   submitted: ['بانتظار التصحيح', 'warn'], reviewed: ['مصحّح ✅', 'ok'], redo: ['طُلبت إعادة 🔁', 'warn'],
 };
+const audLabel = (h) => (h.audience === 'boys' ? '👦 ولد' : h.audience === 'girls' ? '👧 بنات' : '👥 الاثنان');
 const when = (ms) => dayLabel(dkey(ms)).split(' ').slice(1).join(' ') + ' · ' + fmtClock(secOfDay(ms));
 function zoom(src) {
   const z = el(`<div class="zoom"><img src="${src}" alt=""></div>`);
@@ -62,7 +63,7 @@ export function openHomework() {
       ${hws.length ? hws.map((h) => {
         const mine = all.filter((x) => x.homeworkId === h.id), pend = mine.filter((x) => x.status === 'submitted').length;
         return `<button class="list-item hw" data-id="${h.id}"><span class="grow"><span class="t">${esc(h.title)}</span>
-          <small>${h.dueDate ? 'آخر موعد ' + dayLabel(h.dueDate) : 'بدون موعد'} · ${mine.length} تسليم</small><small>🗑️ يُحذف تلقائياً بعد ${dayLabel(lastKeepDay(h))}</small></span>
+          <small>${audLabel(h)} · ${h.dueDate ? 'آخر موعد ' + dayLabel(h.dueDate) : 'بدون موعد'} · ${mine.length} تسليم</small><small>🗑️ يُحذف تلقائياً بعد ${dayLabel(lastKeepDay(h))}</small></span>
           ${pend ? `<span class="badge warn">${pend} بانتظار التصحيح</span>` : (mine.length ? '<span class="badge ok">تم تصحيحها</span>' : '')}</button>`;
       }).join('') : '<div class="empty"><span class="big">📭</span>لا توجد واجبات لهذه المادة بعد.</div>'}
       <p class="muted" style="font-size:12px;margin-top:14px">ملاحظة: يُحذف كل واجب تلقائياً (النص والصور وكل التسليمات) بعد يوم كامل من انتهاء موعد التسليم. صحّح التسليمات وسجّل الدرجات قبل ذلك. الواجب بلا موعد يُحذف بعد 7 أيام من نشره.</p>`;
@@ -79,6 +80,7 @@ function newHomework(subjectId, done) {
     body: `<label class="field"><span>العنوان</span><input id="ht" placeholder="مثال: حل أسئلة الفصل الثاني"></label>
       <label class="field"><span>التفاصيل (اختياري)</span><textarea id="hd"></textarea></label>
       <label class="field"><span>آخر موعد للتسليم (اتركه فارغاً بلا موعد)</span><input type="date" id="hdue" value="${addDays(dkey(), 1)}"></label>
+      <div class="field"><span>لمن هذا الواجب؟</span><div class="seg" id="hAud" style="margin:0"><button type="button" data-a="boys">👦 ولد</button><button type="button" data-a="girls">👧 بنات</button><button type="button" data-a="all" class="on">👥 الاثنان</button></div></div>
       <div id="hp"></div><button class="btn small ghost" id="himg" type="button">🖼️ إضافة صور (يمكنك اختيار أكثر من صورة، بدون حد)</button>`,
     actions: [{ label: 'إلغاء', kind: 'ghost' }, { label: 'نشر', kind: 'primary', sticky: true, onClick: async (api, btn) => {
       const title = $('#ht', m.root).value.trim();
@@ -87,13 +89,14 @@ function newHomework(subjectId, done) {
       try {
         const ref = await addDoc(collection(db, 'homeworks'), {
           subjectId, title, desc: $('#hd', m.root).value.trim(), dueDate: $('#hdue', m.root).value || null,
-          imgCount: imgs.length, createdAt: nowMs(), createdBy: S.admin.username,
+          audience: $('#hAud .on', m.root).dataset.a, imgCount: imgs.length, createdAt: nowMs(), createdBy: S.admin.username,
         });
         for (let i = 0; i < imgs.length; i++) await setDoc(doc(db, 'homeworks', ref.id, 'pages', String(i).padStart(3, '0')), { i, img: imgs[i] });
         sfx.pop(); toast('تم نشر الواجب ✓', 'ok'); done();
       } catch { toast('تعذّر النشر', 'bad'); btn.disabled = false; return false; }
     } }],
   });
+  $$('#hAud button', m.root).forEach((b) => (b.onclick = () => { sfx.tap(); $$('#hAud button', m.root).forEach((x) => x.classList.toggle('on', x === b)); }));
   function drawPrev() {
     $('#hp', m.root).innerHTML = imgs.length
       ? `<div class="thumbs">${imgs.map((s, i) => `<div class="thumb"><img src="${s}" alt=""><button class="x" type="button" data-rm="${i}" aria-label="حذف">✕</button></div>`).join('')}</div><small class="muted">${imgs.length} صورة</small>` : '';
@@ -119,13 +122,13 @@ function detail(hw, onChange) {
       getDocs(collection(db, 'students')), loadAllAvatars().catch(() => {}),
     ]);
     const subs = rows(subSnap).sort((a, b) => b.submittedAt - a.submittedAt);
-    const students = rows(stSnap);
+    const students = rows(stSnap).filter((s) => inAudience(hw, s.gender));
     const handed = new Set(subs.map((s) => s.studentId));
     const missing = students.filter((s) => !handed.has(s.id)).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
     const sub = subjectById(hw.subjectId);
     const hwImgs = await loadHwImages(hw);
     body.innerHTML = `
-      <div class="card"><b>${esc(sub?.emoji || '')} ${esc(sub?.name || '')}</b>
+      <div class="card"><b>${esc(sub?.emoji || '')} ${esc(sub?.name || '')}</b> <span class="badge">${audLabel(hw)}</span>
         ${hw.desc ? `<div class="hw-desc">${esc(hw.desc)}</div>` : ''}${hwImgs.length ? `<div class="thumbs">${hwImgs.map((s) => `<div class="thumb"><img src="${s}" alt=""></div>`).join('')}</div>` : ''}
         <small class="muted">${hw.dueDate ? 'آخر موعد: ' + dayLabel(hw.dueDate) : 'بدون موعد'}</small></div>
       <div class="seg" style="margin-top:14px"><button data-t="in" class="${tab === 'in' ? 'on' : ''}">سلّموا (${subs.length})</button><button data-t="out" class="${tab === 'out' ? 'on' : ''}">لم يسلّموا (${missing.length})</button></div>
