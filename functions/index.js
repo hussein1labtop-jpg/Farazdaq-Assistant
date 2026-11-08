@@ -47,6 +47,13 @@ async function send(tokens, { title, body, tag = '', url = './' }) {
   }
 }
 
+/* tokens of the students of one group ('boys' | 'girls') or of everybody ('all') */
+async function studentTokens(audience = 'all') {
+  const gender = {};
+  (await db.collection('students').get()).docs.forEach((d) => { gender[d.id] = d.data().gender; });
+  return tokensWhere((t) => t.kind === 'student' && (audience === 'all' || gender[String(t.owner).slice(8)] === audience));
+}
+
 const preview = (m) => (m.type === 'sticker' ? 'ملصق 🙂' : String(m.text || '').slice(0, 90));
 
 /* a message inside a student ↔ subject-administration chat */
@@ -79,13 +86,13 @@ exports.onAdminChatMessage = onDocumentCreated({ document: 'adminChats/{pid}/mes
 /* a new announcement */
 exports.onAnnouncement = onDocumentCreated({ document: 'announcements/{id}', region: REGION }, async (event) => {
   const a = event.data.data();
-  await send(await tokensWhere((t) => t.kind === 'student'), { title: '📣 تبليغ جديد', body: String(a.text || 'صورة').slice(0, 90), tag: 'ann-' + event.params.id });
+  await send(await studentTokens(a.audience || 'all'), { title: '📣 تبليغ جديد', body: String(a.text || 'صورة').slice(0, 90), tag: 'ann-' + event.params.id });
 });
 
 /* a new homework */
 exports.onHomework = onDocumentCreated({ document: 'homeworks/{id}', region: REGION }, async (event) => {
   const h = event.data.data();
-  await send(await tokensWhere((t) => t.kind === 'student'), { title: '✏️ واجب جديد', body: h.title || '', tag: 'hw-' + event.params.id });
+  await send(await studentTokens(h.audience || 'all'), { title: '✏️ واجب جديد', body: h.title || '', tag: 'hw-' + event.params.id });
 });
 
 /* every day at 00:01 Baghdad time: tell the students that today's exam started */
