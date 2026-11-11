@@ -4,7 +4,7 @@
 import { db, collection, doc, getDoc, getDocs, esc, SUBJECT_COLORS } from './core.js';
 import { loadSubjects } from './stats.js';
 
-export const S = { admin: null, subjects: [], admins: [], chats: [], adminChats: {}, inst: {}, support: [], mySupport: null, avatars: new Map(), avatarsLoaded: false };
+export const S = { admin: null, subjects: [], admins: [], chats: [], adminChats: {}, support: [], mySupport: null, avatars: new Map(), avatarsLoaded: false };
 export const ROLES = { super: 'المطوّر', institute: 'إدارة المعهد', teacher: 'مدرّس', assistant: 'مساعد' };
 export const isSuper = () => S.admin.role === 'super';
 /* full visibility: developer, institute admin, or any account the developer switched "full access" on for */

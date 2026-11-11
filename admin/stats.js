@@ -3,7 +3,7 @@
 
 import {
   db, collection, doc, getDocs, getDoc, query, where, runTransaction, setDoc,
-  dkey, mkey, monthStart, monthEnd, diffDays, addMonths,
+  dkey, mkey, monthStart, monthEnd, diffDays, addMonths, nowMs,
 } from './core.js';
 
 export const POINTS_PER_EXAM = 10;
@@ -44,6 +44,10 @@ export function totalTarget(subjects, month, examDays) {
  */
 export function studentStats(student, subjects, examDays, results, month, today, bonuses = []) {
   const mine = results.filter((r) => r.studentId === student.id && r.month === month);
+  /* exams published with a start hour (startMs/endMs) are judged on their own 24-hour window; older ones on the calendar day */
+  const now = nowMs();
+  const closed = (d) => (d.endMs ? d.endMs <= now : d.date < today);
+  const opened = (d) => (d.endMs ? d.startMs <= now : d.date <= today);
   const out = { points: 0, target: 0, taken: 0, missed: 0, possible: 0, perSubject: {}, days: {} };
   for (const sub of subjects) {
     const target = subjectTarget(sub, month, examDays);
@@ -59,8 +63,8 @@ export function studentStats(student, subjects, examDays, results, month, today,
     for (const d of days) {
       const r = byDate[d.date];
       out.days[sub.id][d.date] = r ? { status: r.status, points: r.points || 0, max: Math.min(POINTS_PER_EXAM, d.count) }
-        : { status: d.date < today ? 'missed' : (d.date === today ? 'today' : 'future'), points: 0, max: Math.min(POINTS_PER_EXAM, d.count) };
-      if (d.date >= from && d.date < today) {
+        : { status: closed(d) ? 'missed' : (opened(d) ? 'today' : 'future'), points: 0, max: Math.min(POINTS_PER_EXAM, d.count) };
+      if (d.date >= from && closed(d)) {
         per.possible += Math.min(POINTS_PER_EXAM, d.count);
         if (!r) per.missed++;
       }
@@ -128,7 +132,7 @@ export function computeBoard(month, subjects, data, today = dkey()) {
     tiers[t.id].sort(rank);
     shown[t.id] = tiers[t.id].slice(0, t.show).map((m) => m.id);
   }
-  return { month, total, tiers, shown, final: today > monthEnd(month), createdAt: Date.now() };
+  return { month, total, tiers, shown, final: today > monthEnd(month) && data.examDays.every((d) => !d.endMs || d.endMs <= nowMs()), createdAt: Date.now() };
 }
 
 export async function getBoard(month) {
@@ -143,6 +147,9 @@ export async function ensureBoard(month) {
   if (cur.exists() && (cur.data().final || dkey() <= monthEnd(month))) return cur.data();
   const subjects = (await loadSubjects());
   if (!subjects.length) return null;
+  /* wait until the last exam window of the month has closed (an exam lasts 24 hours from its start hour) */
+  const eds = await getDocs(query(collection(db, 'examDays'), where('month', '==', month)));
+  if (eds.docs.some((d) => (d.data().endMs || 0) > nowMs())) return cur.exists() ? cur.data() : null;
   const data = await loadMonthData(month);
   const board = computeBoard(month, subjects, data);
   await runTransaction(db, async (tx) => {

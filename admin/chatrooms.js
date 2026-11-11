@@ -7,19 +7,20 @@ import { S, subjectById } from './state.js';
 
 /* Conversation between a student and the administration of one subject. `c` = {studentId, subjectId, studentName} */
 export async function openStudentChat(c) {
-  const sub = subjectById(c.subjectId);
+  const isInst = c.subjectId === 'institute';
+  const sub = isInst ? { name: 'إدارة المعهد' } : subjectById(c.subjectId);
   const cid = `${c.studentId}_${c.subjectId}`;
   const ref = doc(db, 'chats', cid);
   let student = null;
   try { const s = await getDoc(doc(db, 'students', c.studentId)); if (s.exists()) student = { id: s.id, ...s.data() }; } catch { /* offline */ }
-  const team = S.admins.filter((a) => a.role === 'super' || a.role === 'institute' || a.fullAccess || (a.subjectIds || []).includes(c.subjectId))
+  const team = S.admins.filter((a) => a.role === 'super' || a.role === 'institute' || (!isInst && (a.fullAccess || (a.subjectIds || []).includes(c.subjectId))))
     .map((a) => esc(a.name)).join('، ');
   const extra = `<div class="row wrap" style="justify-content:space-between">
       <span>🎓 <b>${esc(c.studentName || student?.name || '')}</b>${student?.phone ? ` · <a href="tel:${esc(student.phone)}" style="direction:ltr;display:inline-block">${esc(student.phone)}</a>` : ''}</span>
       <button class="btn small" id="cardBtn">بطاقة الطالب</button></div>
-    <div class="muted" style="margin-top:4px">👥 الإدارة المسؤولة عن ${esc(sub?.name || 'المادة')}: ${team || '—'}</div>`;
+    <div class="muted" style="margin-top:4px">👥 ${isInst ? 'المسؤولون عن' : 'الإدارة المسؤولة عن'} ${esc(sub?.name || 'المادة')}: ${team || '—'}</div>`;
   const ov = openChat({
-    title: c.studentName || student?.name || 'طالب', subtitle: `مادة ${sub?.name || ''}`,
+    title: c.studentName || student?.name || 'طالب', subtitle: isInst ? 'إدارة المعهد' : `مادة ${sub?.name || ''}`,
     avatar: avatarHTML(S.avatars.get(c.studentId), c.studentName || '', 'sm'),
     extra,
     msgsPath: ['chats', cid, 'messages'],
@@ -62,20 +63,6 @@ export function openAdminChat(other) {
   });
 }
 export const pairId = (a, b) => [a, b].sort().join('__');
-
-/* Chat between the institute administration and the staff of one subject (everybody with access to that subject + the institute accounts). */
-export function openInstChat(subject) {
-  const ref = doc(db, 'instChats', subject.id), me = S.admin.username;
-  return openChat({
-    title: `إدارة المعهد · ${subject.name}`, subtitle: 'محادثة بين إدارة المعهد وإدارة المادة',
-    avatar: '<span class="av sm" style="background:var(--surface2)">🏛️</span>',
-    msgsPath: ['instChats', subject.id, 'messages'],
-    me: { side: 'admin', id: me, name: S.admin.name },
-    showSender: true, canAddSticker: true,
-    onSend: (p) => setDoc(ref, { subjectId: subject.id, lastMsg: p, lastMsgAt: nowMs(), lastBy: me, lastByName: S.admin.name, seen: { [me]: nowMs() } }, { merge: true }),
-    onOpen: () => { const c = S.inst[subject.id]; if (c && c.lastBy !== me && (c.seen?.[me] || 0) < (c.lastMsgAt || 0)) setDoc(ref, { seen: { [me]: nowMs() } }, { merge: true }); },
-  });
-}
 
 /* Support conversation with the developer. A normal account has one thread; the developer sees every thread. */
 export function openSupportChat(t, asDev) {

@@ -9,7 +9,7 @@ import {
 import { DEV, SUPER_USERNAME, startGuard } from './signature.js';
 import { sfx, setSound, soundOn, buzz, confetti } from './fx.js';
 import { S, ROLES, isAll, isSuper, mySubjects, subjectById, colorOf, refreshSubjects, refreshAdmins, loadAllAvatars, rows } from './state.js';
-import { openStudentChat, openAdminChat, openInstChat, openSupportChat } from './chatrooms.js';
+import { openStudentChat, openAdminChat, openSupportChat } from './chatrooms.js';
 import { pageQuestions } from './questions.js';
 import { pageStudents } from './students.js';
 import { CHANNEL_LIST, openChannel, openBoard, openUsers, openSubjects } from './manage.js';
@@ -114,12 +114,14 @@ function setNavDot(t, on) {
   const b = $(`#nav [data-tab=${t}]`); b.querySelector('.dot')?.remove();
   if (on) b.appendChild(el('<span class="dot"></span>'));
 }
-const canSeeRoom = (sid) => isAll() || (S.admin.subjectIds || []).includes(sid);
-const roomUnread = (sid) => { const c = S.inst[sid]; return !!c && canSeeRoom(sid) && c.lastBy !== S.admin.username && (c.lastMsgAt || 0) > (c.seen?.[S.admin.username] || 0); };
+/* the chat students open with "إدارة المعهد" is answered only by institute-administration accounts (and the developer) */
+const INST = 'institute';
+const isInstStaff = () => S.admin.role === 'institute' || S.admin.role === 'super';
+const chatVisible = (c) => c.subjectId !== INST || isInstStaff();
 const supportUnread = () => (isSuper() ? S.support.some((t) => t.devUnread) : !!S.mySupport?.userUnread);
 /* red dot on the "chats" tab: student chats, institute rooms and support */
 function paintChats() {
-  setNavDot('chats', S.chats.some((c) => c.adminUnread) || Object.keys(S.inst).some(roomUnread) || supportUnread());
+  setNavDot('chats', S.chats.some((c) => c.adminUnread) || supportUnread());
 }
 
 function watch() {
@@ -128,7 +130,7 @@ function watch() {
   else if ((S.admin.subjectIds || []).length) q = query(collection(db, 'chats'), where('subjectId', 'in', S.admin.subjectIds.slice(0, 10)));
   if (q) onSnapshot(q, (snap) => {
     const prev = new Set(S.chats.filter((c) => c.adminUnread).map((c) => c.id));
-    S.chats = rows(snap);
+    S.chats = rows(snap).filter(chatVisible);
     const unread = S.chats.filter((c) => c.adminUnread);
     paintChats();
     if (!firstA && !$('.chat-ov')) {
@@ -137,19 +139,6 @@ function watch() {
     firstA = false;
     if (tab === 'chats') renderChatList();
   });
-  /* institute administration ↔ subject staff rooms */
-  let firstI = true;
-  onSnapshot(collection(db, 'instChats'), (snap) => {
-    const prev = S.inst; S.inst = {};
-    snap.docs.forEach((d) => (S.inst[d.id] = d.data()));
-    const me = S.admin.username;
-    if (!firstI && !$('.chat-ov')) {
-      Object.entries(S.inst).forEach(([sid, c]) => {
-        if (canSeeRoom(sid) && c.lastBy !== me && (c.lastMsgAt || 0) > (prev[sid]?.lastMsgAt || 0)) alertUser(`إدارة المعهد · ${subjectById(sid)?.name || ''}`, `${c.lastByName || ''}: ${c.lastMsg || ''}`, { tag: 'inst-' + sid });
-      });
-    }
-    firstI = false; paintChats(); if (tab === 'chats') renderChatTop();
-  }, () => {});
   /* support conversations with the developer */
   let firstS = true;
   const supDone = () => { firstS = false; paintChats(); if (tab === 'chats') renderChatTop(); };
@@ -235,7 +224,7 @@ async function pageChats(cur) {
   view.innerHTML = `<h1 class="page-title">المحادثات</h1>
     <div id="chatTop"></div>
     <h3 class="section-title" style="margin-top:4px">🎓 محادثات الطلاب</h3>
-    ${subs.length > 1 ? `<div class="chips" id="cf"><button class="chip ${chatFilter === 'all' ? 'on' : ''}" data-f="all">الكل</button>${subs.map((s) => `<button class="chip ${chatFilter === s.id ? 'on' : ''}" data-f="${s.id}">${esc(s.emoji || '')} ${esc(s.name)}</button>`).join('')}</div>` : ''}
+    ${subs.length > 1 || isInstStaff() ? `<div class="chips" id="cf"><button class="chip ${chatFilter === 'all' ? 'on' : ''}" data-f="all">الكل</button>${isInstStaff() ? `<button class="chip ${chatFilter === INST ? 'on' : ''}" data-f="${INST}">🏛️ إدارة المعهد</button>` : ''}${subs.map((s) => `<button class="chip ${chatFilter === s.id ? 'on' : ''}" data-f="${s.id}">${esc(s.emoji || '')} ${esc(s.name)}</button>`).join('')}</div>` : ''}
     <input class="input" id="cs" placeholder="🔍 ابحث عن طالب" value="${esc(chatSearch)}" style="margin-bottom:12px">
     <div id="cl"></div>`;
   $$('#cf .chip').forEach((c) => (c.onclick = () => { chatFilter = c.dataset.f; sfx.tap(); pageChats(cur); }));
@@ -249,7 +238,7 @@ function renderChatList() {
   const list = S.chats.filter((c) => (chatFilter === 'all' || c.subjectId === chatFilter) && (!q || (c.studentName || '').includes(q)))
     .sort((a, b) => (b.lastMsgAt || 0) - (a.lastMsgAt || 0));
   box.innerHTML = list.length ? list.map((c) => {
-    const s = subjectById(c.subjectId);
+    const s = c.subjectId === INST ? { emoji: '🏛️', name: 'إدارة المعهد' } : subjectById(c.subjectId);
     return `<button class="list-item chat-it" data-id="${c.id}">${avatarHTML(S.avatars.get(c.studentId), c.studentName)}
       <span class="t">${esc(c.studentName)}<small>${c.lastBy === 'admin' ? 'أنت: ' : ''}${esc(c.lastMsg || '')}</small></span>
       <span class="end"><span class="chip" style="font-size:11px">${esc(s?.emoji || '')} ${esc(s?.name || '')}</span><br>
@@ -259,10 +248,9 @@ function renderChatList() {
   $$('.chat-it', box).forEach((b) => (b.onclick = () => { sfx.tap(); openStudentChat(S.chats.find((c) => c.id === b.dataset.id)); }));
 }
 
-/* the top of the chats tab: support, and the institute-administration rooms of the subjects */
+/* the top of the chats tab: support with the developer */
 function renderChatTop() {
   const box = $('#chatTop'); if (!box) return;
-  const rooms = isAll() ? S.subjects : S.subjects.filter((s) => (S.admin.subjectIds || []).includes(s.id));
   const dot = (on, attr = '') => `<span class="dot inline" ${attr} ${on ? '' : 'hidden'}></span>`;
   let html = '';
   if (isSuper()) {
@@ -274,17 +262,9 @@ function renderChatTop() {
     html += `<button class="list-item" id="supEntry"><span class="av" style="background:var(--surface2)">🛠️</span>
       <span class="t">تواصل مع الدعم<small>مشكلة أو استفسار عن الاستخدام أو ملاحظة على البرنامج</small></span><span class="end">${dot(S.mySupport?.userUnread)}</span></button>`;
   }
-  if (rooms.length) {
-    html += `<h3 class="section-title">🏛️ إدارة المعهد</h3>` + rooms.map((s) => {
-      const c = S.inst[s.id];
-      return `<button class="list-item inst-it" data-sid="${s.id}"><span class="av" style="background:var(--surface2)">${esc(s.emoji || '📚')}</span>
-        <span class="t">إدارة المعهد · ${esc(s.name)}<small>${c ? esc((c.lastByName ? c.lastByName + ': ' : '') + (c.lastMsg || '')) : 'محادثة بين إدارة المعهد وإدارة المادة'}</small></span><span class="end">${dot(roomUnread(s.id))}</span></button>`;
-    }).join('');
-  }
   box.innerHTML = html;
   const se = $('#supEntry', box); if (se) se.onclick = () => { sfx.tap(); openSupportChat({ id: 'ad_' + S.admin.username, kind: 'admin', name: S.admin.name }, false); };
   $$('.sup-it', box).forEach((b) => (b.onclick = () => { sfx.tap(); openSupportChat(S.support.find((t) => t.id === b.dataset.id), true); }));
-  $$('.inst-it', box).forEach((b) => (b.onclick = () => { sfx.tap(); openInstChat(subjectById(b.dataset.sid)); }));
 }
 
 /* ───────────── more ───────────── */

@@ -3,7 +3,7 @@
 
 import {
   db, collection, doc, getDoc, getDocs, setDoc, addDoc, deleteDoc, updateDoc, writeBatch, query, where,
-  nowMs, dkey, mkey, addDays, addMonths, diffDays, dayLabel, esc, $, $$, toast, modal, confirmBox,
+  nowMs, dkey, mkey, addDays, addMonths, diffDays, dayLabel, esc, $, $$, toast, modal, confirmBox, examWindow, dayStartMs, fmtMin, secOfDay,
 } from './core.js';
 import { sfx } from './fx.js';
 import { S, mySubjects, rows } from './state.js';
@@ -36,7 +36,9 @@ export async function recountExam(sid, date) {
   for (const c of chunks(gids)) (await getDocs(query(collection(db, 'questions'), where('groupId', 'in', c)))).docs.forEach((d) => ids.add(d.id));
   (await getDocs(query(collection(db, 'questions'), where('dayKey', '==', examId(sid, date))))).docs.forEach((d) => ids.add(d.id));
   const ref = doc(db, 'examDays', examId(sid, date));
-  if (ids.size) await setDoc(ref, { subjectId: sid, date, month: mkey(date), count: ids.size });
+  const e = ex.exists() ? ex.data() : null;
+  const win = e && e.startMs ? { startMs: e.startMs, endMs: e.endMs } : {};      // exam window (24 h from the chosen start hour)
+  if (ids.size) await setDoc(ref, { subjectId: sid, date, month: mkey(date), count: ids.size, ...win });
   else await deleteDoc(ref).catch(() => {});
   return ids.size;
 }
@@ -45,7 +47,7 @@ export async function afterGroupChange(gid) {
   await recountGroup(gid);
   const today = dkey();
   const ex = await getDocs(query(collection(db, 'exams'), where('groupIds', 'array-contains', gid)));
-  for (const d of ex.docs) { const e = d.data(); if (e.date >= today) await recountExam(e.subjectId, e.date); }
+  for (const d of ex.docs) { const e = d.data(); if (e.date >= addDays(today, -1)) await recountExam(e.subjectId, e.date); }
 }
 
 function ask(title, label, value = '', ok = 'حفظ') {
@@ -130,7 +132,7 @@ function openGroup(group, onChange) {
         for (const d of ex.docs) {
           const e = d.data(), left = (e.groupIds || []).filter((x) => x !== group.id);
           if (left.length) await updateDoc(d.ref, { groupIds: left }); else await deleteDoc(d.ref);
-          if (e.date >= today) await recountExam(e.subjectId, e.date);
+          if (e.date >= addDays(today, -1)) await recountExam(e.subjectId, e.date);
         }
         await deleteDoc(doc(db, 'questionGroups', group.id));
         sfx.tap(); toast('تم حذف المجموعة', 'ok'); ovRef && ovRef.close(); onChange();
@@ -257,7 +259,9 @@ async function renderExams(cur, sub, box) {
   ]);
   if (!cur()) return;
   const groups = rows(grpSnap).sort((a, b) => a.createdAt - b.createdAt);
-  const chosenIds = exSnap.exists() ? exSnap.data().groupIds || [] : [];
+  const ex = exSnap.exists() ? exSnap.data() : null;
+  const chosenIds = ex ? ex.groupIds || [] : [];
+  const exStart = ex ? (ex.startMs ?? dayStartMs(ex.date)) : 0;
   const chosen = chosenIds.map((id) => groups.find((g) => g.id === id)).filter(Boolean);
   const total = chosen.reduce((s, g) => s + (g.count || 0), 0) + legacy.size;
   const counts = Object.fromEntries(rows(edSnap).filter((d) => d.subjectId === sub.id).map((d) => [d.date, d.count]));
@@ -265,6 +269,7 @@ async function renderExams(cur, sub, box) {
   const reload = () => pageQuestions(cur);
 
   box.innerHTML = `
+    <button class="btn primary block" id="pubBtn" style="margin-bottom:12px">📢 نشر امتحان جديد (اختيار المجموعات والموعد والتكرار)</button>
     <div class="week">${days.map((d) => `<button data-d="${d}" class="${d === st.date ? 'on' : ''} ${counts[d] ? '' : 'empty0'}">${['أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة', 'سبت'][new Date(d + 'T00:00:00Z').getUTCDay()]}<b>${counts[d] || 0}</b>${+d.slice(8)}</button>`).join('')}</div>
     <div class="row" style="margin-bottom:12px">
       <button class="icon-btn" id="prev" aria-label="اليوم السابق">›</button>
@@ -274,11 +279,12 @@ async function renderExams(cur, sub, box) {
     </div>
     <div class="card">
       <div class="row" style="justify-content:space-between"><b>🗂️ مجموعات هذا الامتحان</b><span class="badge ${total ? 'ok' : 'warn'}">${total} سؤال</span></div>
+      ${ex ? `<div class="badge ok" style="display:block;margin-top:8px;padding:8px">⏰ يبدأ ${dayLabel(dkey(exStart))} الساعة ${fmtMin(Math.round((exStart - dayStartMs(dkey(exStart))) / 60000))} · ويستمر 24 ساعة</div>` : ''}
       ${chosen.length ? chosen.map((g) => `<div class="list-item" style="margin-top:8px;cursor:default"><span class="grow"><span class="t">${esc(g.name)}</span><small>${g.count || 0} سؤال</small></span><button class="btn small ghost" data-open="${g.id}">فتح</button></div>`).join('')
         : '<p class="muted" style="margin:10px 0 0">لم تُختر أي مجموعة لهذا اليوم، ولا يوجد امتحان.</p>'}
       ${legacy.size ? `<div class="badge warn" style="display:block;margin-top:10px;padding:8px">يوجد ${legacy.size} سؤال مضاف مباشرة لهذا اليوم (من النسخة السابقة). يبقى ضمن الامتحان، ويُحذف بزر «حذف كل أسئلة اليوم».</div>` : ''}
       ${total && total < 10 ? '<p class="muted" style="font-size:13px;margin:10px 0 0">⚠ أقل من 10 أسئلة: أقصى نقاط الطالب بهذا اليوم تساوي عدد الأسئلة.</p>' : ''}
-      <div class="row wrap" style="margin-top:12px"><button class="btn small primary" id="pickG">${chosen.length ? 'تغيير المجموعات' : 'اختيار المجموعات'}</button>
+      <div class="row wrap" style="margin-top:12px"><button class="btn small primary" id="pickG">${chosen.length ? '✏️ تعديل الامتحان' : '+ إنشاء الامتحان'}</button>
         <button class="btn small ghost" id="prev2" ${total ? '' : 'disabled'}>👁️ معاينة الأسئلة</button></div>
     </div>
     <p class="muted" style="font-size:13px;margin:10px 2px">المجموعات مرتبطة بالامتحان وليست نسخة منه: أي تعديل على أسئلة المجموعة يظهر تلقائياً في كل يوم يستخدمها.</p>
@@ -291,9 +297,10 @@ async function renderExams(cur, sub, box) {
   $('#next', box).onclick = () => { st.date = addDays(st.date, 1); sfx.tap(); reload(); };
   $('#pick', box).onchange = (e) => { if (e.target.value) { st.date = e.target.value; reload(); } };
   $$('[data-open]', box).forEach((b) => (b.onclick = () => openGroup(groups.find((g) => g.id === b.dataset.open), reload)));
-  $('#pickG', box).onclick = () => pickGroups(sub, groups, chosenIds, reload);
+  $('#pubBtn', box).onclick = () => publishDialog(sub, groups, { date: st.date, groupIds: [], repeat: 1 }, reload);
+  $('#pickG', box).onclick = () => publishDialog(sub, groups, { date: st.date, startMin: ex?.startMin, groupIds: chosenIds, repeat: 1 }, reload);
   $('#prev2', box).onclick = () => preview(chosen, legacy);
-  $('#copy', box).onclick = () => copyDialog(sub, chosenIds, reload);
+  $('#copy', box).onclick = () => copyDialog(sub, chosenIds, ex, reload);
   $('#clear', box).onclick = async () => {
     if (!(await confirmBox('حذف كل أسئلة هذا اليوم؟ سيُفرَّغ امتحان هذا اليوم. المجموعات نفسها تبقى محفوظة بأسئلتها.', { danger: true, ok: 'حذف' }))) return;
     try {
@@ -304,22 +311,48 @@ async function renderExams(cur, sub, box) {
   };
 }
 
-function pickGroups(sub, groups, chosenIds, done) {
+/* Publish an exam: question groups + date + start hour + how many days it repeats (each one lasts 24 hours from its start) */
+function publishDialog(sub, groups, preset, done) {
+  const hh = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const nowMin = Math.floor(secOfDay() / 60);
+  const defMin = preset.startMin != null ? preset.startMin : (preset.date === dkey() ? Math.min(1425, Math.ceil((nowMin + 5) / 15) * 15) : 480);
   const m = modal({
-    title: `مجموعات امتحان ${dayLabel(st.date)}`, wide: true,
-    body: groups.length ? `<div>${groups.map((g) => `<label class="list-item" style="margin-bottom:8px;cursor:pointer"><input type="checkbox" value="${g.id}" ${chosenIds.includes(g.id) ? 'checked' : ''} style="width:24px;height:24px;accent-color:#2b3244;flex:none"><span class="grow"><span class="t">${esc(g.name)}</span><small>${g.count || 0} سؤال</small></span></label>`).join('')}</div>`
+    title: `📢 نشر امتحان ${esc(sub.name)}`, wide: true,
+    body: groups.length ? `
+      <div class="field"><span>مجموعات الأسئلة</span>${groups.map((g) => `<label class="list-item" style="margin-bottom:8px;cursor:pointer"><input type="checkbox" value="${g.id}" ${preset.groupIds.includes(g.id) ? 'checked' : ''} style="width:24px;height:24px;accent-color:#2b3244;flex:none"><span class="grow"><span class="t">${esc(g.name)}</span><small>${g.count || 0} سؤال</small></span></label>`).join('')}</div>
+      <label class="field"><span>تاريخ نزول الامتحان</span><input type="date" id="pd" value="${preset.date}"></label>
+      <label class="field"><span>ساعة نزول الامتحان (بتوقيت بغداد)</span><input type="time" id="pt" value="${hh(defMin)}"></label>
+      <label class="field"><span>التكرار: كم يوماً متتالياً يتكرر الامتحان بنفس الساعة؟</span><input type="number" id="pr" min="1" max="62" value="${preset.repeat || 1}"></label>
+      <div class="card" id="pSum" style="padding:12px;font-size:14px"></div>`
       : '<div class="empty-s">لا توجد مجموعات لهذه المادة. أنشئ مجموعة من تبويب «مجموعات الأسئلة» أولاً.</div>',
-    actions: [{ label: 'إلغاء', kind: 'ghost' }, ...(groups.length ? [{ label: 'حفظ', kind: 'primary', sticky: true, onClick: async (api, btn) => {
+    actions: [{ label: 'إلغاء', kind: 'ghost' }, ...(groups.length ? [{ label: '📢 نشر الامتحان', kind: 'primary', sticky: true, onClick: async (api, btn) => {
       const ids = $$('input[type=checkbox]:checked', m.root).map((c) => c.value);
+      const date = $('#pd', m.root).value, tv = $('#pt', m.root).value, n = Math.floor(+$('#pr', m.root).value);
+      if (!ids.length) { toast('اختر مجموعة واحدة على الأقل', 'bad'); return false; }
+      if (!date || !tv) { toast('حدّد التاريخ والساعة', 'bad'); return false; }
+      if (!(n >= 1 && n <= 62)) { toast('التكرار من 1 إلى 62 يوماً', 'bad'); return false; }
+      const [h, mi] = tv.split(':').map(Number), startMin = h * 60 + mi;
       btn.disabled = true;
       try {
-        const ref = doc(db, 'exams', examId(sub.id, st.date));
-        if (ids.length) await setDoc(ref, { subjectId: sub.id, date: st.date, groupIds: ids, updatedAt: nowMs(), updatedBy: S.admin.username });
-        else await deleteDoc(ref).catch(() => {});
-        await recountExam(sub.id, st.date); sfx.pop(); toast('تم حفظ الامتحان ✓', 'ok'); done();
-      } catch { toast('تعذّر الحفظ', 'bad'); btn.disabled = false; return false; }
+        for (let i = 0; i < n; i++) {
+          const d = addDays(date, i), w = examWindow(d, startMin);
+          await setDoc(doc(db, 'exams', examId(sub.id, d)), { subjectId: sub.id, date: d, groupIds: ids, startMin, startMs: w.startMs, endMs: w.endMs, announce: i === 0, publishedAt: nowMs(), updatedBy: S.admin.username });
+          await recountExam(sub.id, d);
+        }
+        sfx.pop(); toast(n > 1 ? `تم نشر الامتحان لمدة ${n} أيام ✓` : 'تم نشر الامتحان ✓', 'ok'); done();
+      } catch (e) { console.error(e); toast('تعذّر النشر', 'bad'); btn.disabled = false; return false; }
     } }] : [])],
   });
+  const sum = () => {
+    const box = $('#pSum', m.root); if (!box) return;
+    const date = $('#pd', m.root).value, tv = $('#pt', m.root).value, n = Math.max(1, Math.floor(+$('#pr', m.root).value) || 1);
+    if (!date || !tv) { box.textContent = '—'; return; }
+    const [h, mi] = tv.split(':').map(Number), min = h * 60 + mi, w = examWindow(date, min);
+    box.innerHTML = `🕒 ${w.startMs <= nowMs() ? '<b>يبدأ فوراً</b> (الساعة المختارة مرّت)' : '<b>يُجدوَل</b> ليبدأ'}: ${dayLabel(date)} الساعة ${fmtMin(min)}<br>
+      ⏳ يستمر 24 ساعة حتى ${dayLabel(dkey(w.endMs))} الساعة ${fmtMin(min)}${n > 1 ? `<br>🔁 يتكرر يومياً بنفس الساعة لمدة ${n} أيام، آخرها ${dayLabel(addDays(date, n - 1))}` : ''}<br>
+      🔔 يصل الطلاب إشعار عند النشر وعند بدء الامتحان.`;
+  };
+  $$('#pd, #pt, #pr', m.root).forEach((i) => i.addEventListener('input', sum)); sum();
 }
 
 async function preview(chosen, legacy) {
@@ -336,7 +369,7 @@ async function preview(chosen, legacy) {
   });
 }
 
-function copyDialog(sub, chosenIds, done) {
+function copyDialog(sub, chosenIds, srcExam, done) {
   const from = addDays(st.date, 1);
   const m = modal({
     title: 'نسخ الامتحان إلى أيام أخرى',
@@ -354,7 +387,8 @@ function copyDialog(sub, chosenIds, done) {
           const d = addDays(a, i); if (d === st.date) continue;
           const ref = doc(db, 'exams', examId(sub.id, d)), cur = await getDoc(ref);
           const ids = [...new Set([...(cur.exists() ? cur.data().groupIds || [] : []), ...chosenIds])];
-          await setDoc(ref, { subjectId: sub.id, date: d, groupIds: ids, updatedAt: nowMs(), updatedBy: S.admin.username });
+          const startMin = srcExam?.startMin || 0, w = examWindow(d, startMin);
+          await setDoc(ref, { subjectId: sub.id, date: d, groupIds: ids, startMin, startMs: w.startMs, endMs: w.endMs, announce: false, updatedAt: nowMs(), updatedBy: S.admin.username });
           await recountExam(sub.id, d);
         }
         sfx.pop(); toast(`تم نسخ الامتحان إلى ${n} يوم ✓`, 'ok'); done();
