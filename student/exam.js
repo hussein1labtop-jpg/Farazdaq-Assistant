@@ -3,7 +3,7 @@
 
 import {
   db, collection, doc, getDoc, getDocs, setDoc, updateDoc, query, where,
-  dkey, mkey, secOfDay, esc, $, $$, el, toast, fullscreen, confirmBox, rngFrom, shuffle, sameAnswer,
+  dkey, mkey, nowMs, secOfDay, esc, $, $$, el, toast, fullscreen, confirmBox, rngFrom, shuffle, sameAnswer,
 } from './core.js';
 import { sfx, buzz, confetti } from './fx.js';
 import { POINTS_PER_EXAM } from './stats.js';
@@ -32,8 +32,11 @@ async function loadExamQuestions(subjectId, date) {
   • a wrong / "I don't know" answer sends that question to the end of the line; it comes back once more
   • the exam ends at 10 points, or when no question is left
 */
-export async function runExam({ student, subject, color }) {
-  const date = dkey();
+export async function runExam({ student, subject, color, exam }) {
+  /* `exam` = the exam window being sat: { date, startMs, endMs } (24 hours from the start hour the administration chose) */
+  const date = exam.date;
+  if (nowMs() < exam.startMs) { toast('لم يبدأ هذا الامتحان بعد'); return; }
+  if (nowMs() >= exam.endMs) { toast('انتهى وقت هذا الامتحان'); return; }
   const dayKey = `${subject.id}_${date}`;
   const rid = `${student.id}_${subject.id}_${date}`;
   const ref = doc(db, 'results', rid);
@@ -41,7 +44,7 @@ export async function runExam({ student, subject, color }) {
   let qs;
   try { qs = await loadExamQuestions(subject.id, date); }
   catch { toast('تعذّر تحميل الأسئلة، تأكد من الإنترنت', 'bad'); return; }
-  if (!Object.keys(qs).length) { toast('لا توجد أسئلة لهذا اليوم بعد'); return; }
+  if (!Object.keys(qs).length) { toast('لا توجد أسئلة لهذا الامتحان بعد'); return; }
 
   let state, cur = await getDoc(ref);
   if (cur.exists() && cur.data().status === 'done') { toast('أنهيت هذا الامتحان اليوم ✓', 'ok'); return; }
@@ -51,7 +54,7 @@ export async function runExam({ student, subject, color }) {
     state = { queue: order.map((id) => ({ id, t: 0 })), points: 0, first: 0, seen: [] };
     await setDoc(ref, {
       studentId: student.id, subjectId: subject.id, date, month: mkey(date), status: 'started',
-      points: 0, firstTry: 0, seen: 0, startedSec: secOfDay(), state,
+      points: 0, firstTry: 0, seen: 0, startedSec: Math.floor((nowMs() - exam.startMs) / 1000), state,
     });
   }
   let streak = 0, locked = false;
@@ -86,7 +89,7 @@ export async function runExam({ student, subject, color }) {
 
     function show() {
       locked = false; drawMeter();
-      if (dkey() !== date) return finish(true);
+      if (nowMs() >= exam.endMs) return finish(true);
       if (state.points >= POINTS_PER_EXAM || !state.queue.length) return finish();
       const item = state.queue[0], q = qs[item.id];
       if (!q) { state.queue.shift(); return show(); }
@@ -158,7 +161,7 @@ export async function runExam({ student, subject, color }) {
     }
 
     async function finish(timeUp = false) {
-      await persist({ status: 'done', finishedSec: secOfDay() });
+      await persist({ status: 'done', finishedSec: Math.floor((nowMs() - exam.startMs) / 1000) });
       const p = state.points;
       const msg = timeUp ? 'انتهى وقت امتحان اليوم ⏰' : p >= 10 ? 'علامة كاملة! أنت أسطورة 🔥' : p >= 7 ? 'أداء رائع، استمر 👏' : p >= 4 ? 'جيد! كرّر الحفظ وستتحسن 💪' : 'لا بأس، غداً فرصة أفضل 🌱';
       p >= 7 ? sfx.win() : sfx.done();

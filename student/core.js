@@ -54,6 +54,14 @@ export const dkey = (ms = nowMs()) => new Date(ms + TZ).toISOString().slice(0, 1
 export const secOfDay = (ms = nowMs()) => Math.floor(((ms + TZ) % 86400000) / 1000);
 export const msToMidnight = () => 86400000 - ((nowMs() + TZ) % 86400000);
 export const mkey = (d) => d.slice(0, 7);
+/* An exam lives for 24 hours from the hour the administration chose (not from midnight).
+   startMin = minutes after midnight (Baghdad), e.g. 18:00 → 1080. */
+export const dayStartMs = (d) => Date.parse(d + 'T00:00:00Z') - TZ;
+export function examWindow(date, startMin = 0) {
+  const startMs = dayStartMs(date) + startMin * 60000;
+  return { startMs, endMs: startMs + 86400000 };
+}
+export const fmtMin = (m) => { const h = Math.floor(m / 60), mi = m % 60; return ((h % 12) || 12) + ':' + String(mi).padStart(2, '0') + ' ' + (h >= 12 ? 'م' : 'ص'); };
 const pad = (n) => String(n).padStart(2, '0');
 export function addDays(d, n) { return new Date(Date.parse(d + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10); }
 export function diffDays(a, b) { return Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000); }
