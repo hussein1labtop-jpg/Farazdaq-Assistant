@@ -42,7 +42,7 @@ export function totalTarget(subjects, month, examDays) {
  * Per-student monthly numbers.
  * subjects: the subjects to count · examDays: [{subjectId,date,count}] · results: [{studentId,subjectId,date,points,...}]
  */
-export function studentStats(student, subjects, examDays, results, month, today) {
+export function studentStats(student, subjects, examDays, results, month, today, bonuses = []) {
   const mine = results.filter((r) => r.studentId === student.id && r.month === month);
   const out = { points: 0, target: 0, taken: 0, missed: 0, possible: 0, perSubject: {}, days: {} };
   for (const sub of subjects) {
@@ -69,6 +69,10 @@ export function studentStats(student, subjects, examDays, results, month, today)
     out.points += per.points; out.target += target; out.taken += per.taken;
     out.missed += per.missed; out.possible += per.possible;
   }
+  /* gift points from the administration: added on top, and may go beyond the monthly target */
+  out.earned = out.points;
+  out.bonus = bonuses.filter((b) => b.studentId === student.id && b.month === month).reduce((s, b) => s + (+b.points || 0), 0);
+  out.points = out.earned + out.bonus;
   out.rate = out.possible > 0 ? out.points / out.possible : null;      // commitment so far
   /* finished month: half of the whole target or less → contact the parent. Running month: judged on what was possible so far. */
   out.needsFollowUp = today > monthEnd(month)
@@ -93,12 +97,13 @@ export async function loadSubjects() {
   return list.sort((a, b) => (a.order || 0) - (b.order || 0));
 }
 export async function loadMonthData(month) {
-  const [students, results, examDays] = await Promise.all([
+  const [students, results, examDays, bonuses] = await Promise.all([
     getDocs(collection(db, 'students')).then(docs),
     getDocs(query(collection(db, 'results'), where('month', '==', month))).then(docs),
     getDocs(query(collection(db, 'examDays'), where('month', '==', month))).then(docs),
+    getDocs(query(collection(db, 'bonuses'), where('month', '==', month))).then(docs),
   ]);
-  return { students, results, examDays };
+  return { students, results, examDays, bonuses };
 }
 
 /* ───────────── Board ───────────── */
@@ -106,17 +111,18 @@ export function computeBoard(month, subjects, data, today = dkey()) {
   const total = totalTarget(subjects, month, data.examDays);
   const tiers = Object.fromEntries(TIERS.map((t) => [t.id, []]));
   for (const s of data.students) {
-    const st = studentStats(s, subjects, data.examDays, data.results, month, today);
+    const st = studentStats(s, subjects, data.examDays, data.results, month, today, data.bonuses || []);
     const tier = tierOf(st.points, total);
     if (!tier) continue;
     const mine = data.results.filter((r) => r.studentId === s.id && r.month === month && r.status === 'done');
     const seen = mine.reduce((a, r) => a + (r.seen || 0), 0);
     const first = mine.reduce((a, r) => a + (r.firstTry || 0), 0);
     const avgStart = mine.length ? mine.reduce((a, r) => a + (r.startedSec || 0), 0) / mine.length : 86400;
-    tiers[tier.id].push({ id: s.id, name: s.name, points: st.points, acc: seen ? first / seen : 0, avgStart: Math.round(avgStart) });
+    tiers[tier.id].push({ id: s.id, name: s.name, points: st.points, bonus: st.bonus, missed: st.missed, acc: seen ? first / seen : 0, avgStart: Math.round(avgStart) });
   }
-  /* earliest to sit the exam, never late, most accurate → ranked first */
-  const rank = (a, b) => (b.points - a.points) || (b.acc - a.acc) || (a.avgStart - b.avgStart);
+  /* 1) most points (a student above the monthly limit comes first) 2) full commitment (fewest missed exams)
+     3) most accurate on the first try 4) earliest to sit the exams */
+  const rank = (a, b) => (b.points - a.points) || ((a.missed || 0) - (b.missed || 0)) || (b.acc - a.acc) || (a.avgStart - b.avgStart);
   const shown = {};
   for (const t of TIERS) {
     tiers[t.id].sort(rank);

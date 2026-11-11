@@ -15,7 +15,7 @@ import { alertUser, notifyCardHTML, bindNotifyCard, resumePush } from './notify.
 import { runExam } from './exam.js';
 import { pageHomework } from './homework.js';
 
-const S = { student: null, avatar: null, tab: 'profile', dots: {}, avCache: new Map(), timer: null, latest: { ann: null, sch: 0 } };
+const S = { student: null, avatar: null, tab: 'profile', dots: {}, supDot: false, avCache: new Map(), timer: null, latest: { ann: null, sch: 0 } };
 let subjName = {};
 const view = $('#view');
 let tok = 0;
@@ -120,6 +120,7 @@ async function enter() {
   $$('#nav button').forEach((b) => (b.onclick = () => go(b.dataset.tab)));
   getDoc(doc(db, 'avatars', S.student.id)).then((s) => { if (s.exists()) { S.avatar = s.data().img; if (S.tab === 'profile') go('profile', true); } }).catch(() => {});
   watchChats();
+  watchGifts();
   startAlerts();
   resumePush('student:' + S.student.id);
   go('profile', true);
@@ -145,10 +146,6 @@ function watchChats() {
   onSnapshot(query(collection(db, 'chats'), where('studentId', '==', S.student.id)), (snap) => {
     const prev = { ...S.dots }; S.dots = {};
     snap.docs.forEach((d) => { if (d.data().studentUnread) S.dots[d.data().subjectId] = true; });
-    const any = Object.keys(S.dots).length > 0;
-    const nb = $('#nav [data-tab=profile]');
-    nb.querySelector('.dot')?.remove();
-    if (any) nb.appendChild(el('<span class="dot"></span>'));
     if (!firstChatSnap && !$('.chat-ov')) {
       snap.docs.forEach((d) => {
         const c = d.data();
@@ -156,7 +153,59 @@ function watchChats() {
       });
     }
     firstChatSnap = false;
-    $$('[data-chat-dot]').forEach((n) => (n.hidden = !S.dots[n.dataset.chatDot]));
+    paintDots();
+  });
+  /* the support conversation with the developer */
+  let firstSup = true;
+  onSnapshot(doc(db, 'supportChats', 'st_' + S.student.id), (s) => {
+    const was = S.supDot;
+    S.supDot = s.exists() && !!s.data().userUnread;
+    if (!firstSup && S.supDot && !was && !$('.chat-ov')) alertUser('🛠️ الدعم الفني', s.data().lastMsg || 'رسالة جديدة', { tag: 'support' });
+    firstSup = false; paintDots();
+  }, () => {});
+}
+function paintDots() {
+  const any = Object.keys(S.dots).length > 0 || S.supDot;
+  const nb = $('#nav [data-tab=profile]');
+  nb.querySelector('.dot')?.remove();
+  if (any) nb.appendChild(el('<span class="dot"></span>'));
+  $$('[data-chat-dot]').forEach((n) => (n.hidden = n.dataset.chatDot === 'support' ? !S.supDot : !S.dots[n.dataset.chatDot]));
+}
+
+function openSupport() {
+  const tid = 'st_' + S.student.id, ref = doc(db, 'supportChats', tid);
+  openChat({
+    title: 'الدعم الفني', subtitle: 'اكتب مشكلتك أو استفسارك أو ملاحظتك',
+    avatar: '<span class="av sm" style="background:var(--surface2)">🛠️</span>',
+    msgsPath: ['supportChats', tid, 'messages'],
+    me: { side: 'user', id: S.student.id, name: S.student.name },
+    showSender: false, canAddSticker: false,
+    onSend: (p) => setDoc(ref, { kind: 'student', ownerId: S.student.id, name: S.student.name, lastMsg: p, lastMsgAt: nowMs(), lastBy: 'user', devUnread: true, userUnread: false }, { merge: true }),
+    onOpen: () => { if (S.supDot) setDoc(ref, { userUnread: false }, { merge: true }); },
+  });
+}
+
+/* gift points from the administration: a congratulation pop-up the first time the student opens the app after it */
+let giftOpen = false, lastGiftSnap = null;
+function watchGifts() {
+  onSnapshot(query(collection(db, 'bonuses'), where('studentId', '==', S.student.id)), (snap) => { lastGiftSnap = snap; handleGifts(); }, () => {});
+}
+function handleGifts() {
+  if (giftOpen || !lastGiftSnap) return;
+  const fresh = lastGiftSnap.docs.filter((d) => !d.data().seen);
+  if (!fresh.length) return;
+  giftOpen = true;
+  const total = fresh.reduce((s, d) => s + (+d.data().points || 0), 0);
+  const notes = fresh.map((d) => d.data().note).filter(Boolean);
+  fresh.forEach((d) => updateDoc(d.ref, { seen: true }).catch(() => {}));
+  if (document.hidden) alertUser('🎁 مبروك! وصلتك هدية', `+${total} نقطة من الإدارة`, { tag: 'gift' });
+  sfx.win(); confetti(140); buzz([30, 40, 30]);
+  modal({
+    body: `<div style="text-align:center"><div style="font-size:70px">🎁</div><h2 style="margin:4px 0">مبروك! جاتك هدية 🎉</h2>
+      <p class="muted" style="margin:0">من إدارة المعهد</p><div class="fin"><div class="big">+${total}</div></div>
+      <p style="margin:0">نقطة أُضيفت إلى رصيدك هذا الشهر</p>${notes.length ? `<p class="muted" style="margin-top:8px">${esc(notes.join(' · '))}</p>` : ''}</div>`,
+    actions: [{ label: 'شكراً 💛', kind: 'primary' }],
+    onClose: () => { giftOpen = false; if (S.tab === 'profile') go('profile', true); setTimeout(handleGifts, 300); },
   });
 }
 
@@ -164,11 +213,12 @@ function watchChats() {
 const rows = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 async function loadMine() {
   const month = mkey(dkey());
-  const [rs, eds] = await Promise.all([
+  const [rs, eds, bns] = await Promise.all([
     getDocs(query(collection(db, 'results'), where('studentId', '==', S.student.id))),
     getDocs(query(collection(db, 'examDays'), where('month', '==', month))),
+    getDocs(query(collection(db, 'bonuses'), where('studentId', '==', S.student.id))),
   ]);
-  return { results: rows(rs), examDays: rows(eds) };
+  return { results: rows(rs), examDays: rows(eds), bonuses: rows(bns) };
 }
 const colorOf = (sub, i) => sub.color || SUBJECT_COLORS[i % SUBJECT_COLORS.length];
 function streakOf(results) {
@@ -184,7 +234,7 @@ async function pageProfile(cur) {
   const [subjects, mine] = await Promise.all([loadSubjects(), loadMine()]);
   if (!cur()) return;
   const month = mkey(dkey()), today = dkey();
-  const st = studentStats(S.student, subjects, mine.examDays, mine.results, month, today);
+  const st = studentStats(S.student, subjects, mine.examDays, mine.results, month, today, mine.bonuses);
   const tier = tierOf(st.points, st.target);
   const pct = st.target ? Math.min(1, st.points / st.target) : 0;
   const C = 2 * Math.PI * 64;
@@ -204,7 +254,7 @@ async function pageProfile(cur) {
       <circle class="bar" id="ringBar" cx="75" cy="75" r="64" fill="none" stroke-width="14" stroke-dasharray="${C}" stroke-dashoffset="${C}"/></svg>
       <div class="ring-in"><b id="ptsNum">0</b><small>${st.target ? 'من ' + st.target + ' نقطة' : 'لا توجد مواد بعد'}</small></div>
     </div>
-    <div class="muted" style="text-align:center;margin-top:6px;font-size:13px;position:relative;z-index:1">نقاط شهر ${monthName(month)}</div>
+    <div class="muted" style="text-align:center;margin-top:6px;font-size:13px;position:relative;z-index:1">نقاط شهر ${monthName(month)}${st.bonus ? `<br><b style="color:var(--gold)">🎁 منها ${st.bonus} نقطة هدية من الإدارة</b>` : ''}</div>
     <div class="stats3" style="position:relative;z-index:1">
       <div class="stat"><b>${st.taken}</b><small>امتحنت</small></div>
       <div class="stat"><b style="color:${st.missed ? 'var(--bad)' : 'inherit'}">${st.missed}</b><small>فاتتك</small></div>
@@ -219,6 +269,10 @@ async function pageProfile(cur) {
       <span class="t">إدارة مادة ${esc(s.name)}<small>اضغط لفتح المحادثة</small></span>
       <span class="end"><span class="dot inline" data-chat-dot="${s.id}" ${S.dots[s.id] ? '' : 'hidden'}></span></span>
     </button>`).join('') : '<div class="empty-s">ستظهر هنا محادثات المواد عند إضافتها</div>'}
+  <button class="list-item" id="supBtn" style="margin-top:8px">
+    <span class="av" style="background:var(--surface2)">🛠️</span>
+    <span class="t">تواصل مع الدعم<small>مشكلة أو استفسار عن الاستخدام أو ملاحظة على التطبيق</small></span>
+    <span class="end"><span class="dot inline" data-chat-dot="support" ${S.supDot ? '' : 'hidden'}></span></span></button>
 
   <div style="margin-top:16px" id="notifBox">${notifyCardHTML()}</div>
   ${!standalone ? `<div class="card" style="margin-top:18px;text-align:center"><b>ثبّت التطبيق على هاتفك 📲</b>
@@ -240,6 +294,7 @@ async function pageProfile(cur) {
   };
   $$('.chat-open').forEach((b) => (b.onclick = () => { sfx.tap(); openStudentChat(active.find((s) => s.id === b.dataset.sid)); }));
   const ib = $('#installBtn'); if (ib) ib.onclick = async () => { installEvt.prompt(); installEvt = null; ib.remove(); };
+  $('#supBtn').onclick = () => { sfx.tap(); openSupport(); };
   bindNotifyCard(view, 'student:' + S.student.id, () => go('profile', true));
   $('#aboutBtn').onclick = about;
 }
