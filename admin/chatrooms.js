@@ -62,3 +62,36 @@ export function openAdminChat(other) {
   });
 }
 export const pairId = (a, b) => [a, b].sort().join('__');
+
+/* Chat between the institute administration and the staff of one subject (everybody with access to that subject + the institute accounts). */
+export function openInstChat(subject) {
+  const ref = doc(db, 'instChats', subject.id), me = S.admin.username;
+  return openChat({
+    title: `إدارة المعهد · ${subject.name}`, subtitle: 'محادثة بين إدارة المعهد وإدارة المادة',
+    avatar: '<span class="av sm" style="background:var(--surface2)">🏛️</span>',
+    msgsPath: ['instChats', subject.id, 'messages'],
+    me: { side: 'admin', id: me, name: S.admin.name },
+    showSender: true, canAddSticker: true,
+    onSend: (p) => setDoc(ref, { subjectId: subject.id, lastMsg: p, lastMsgAt: nowMs(), lastBy: me, lastByName: S.admin.name, seen: { [me]: nowMs() } }, { merge: true }),
+    onOpen: () => { const c = S.inst[subject.id]; if (c && c.lastBy !== me && (c.seen?.[me] || 0) < (c.lastMsgAt || 0)) setDoc(ref, { seen: { [me]: nowMs() } }, { merge: true }); },
+  });
+}
+
+/* Support conversation with the developer. A normal account has one thread; the developer sees every thread. */
+export function openSupportChat(t, asDev) {
+  const ref = doc(db, 'supportChats', t.id), me = S.admin.username;
+  return openChat({
+    title: asDev ? (t.name || 'مستخدم') : 'الدعم الفني', subtitle: asDev ? (t.kind === 'student' ? 'طالب' : 'إدارة') : 'اكتب مشكلتك أو استفسارك أو ملاحظتك على التطبيق',
+    avatar: '<span class="av sm" style="background:var(--surface2)">🛠️</span>',
+    msgsPath: ['supportChats', t.id, 'messages'],
+    me: { side: asDev ? 'dev' : 'user', id: me, name: S.admin.name },
+    showSender: false, canAddSticker: asDev,
+    onSend: (p) => setDoc(ref, asDev
+      ? { lastMsg: p, lastMsgAt: nowMs(), lastBy: 'dev', devUnread: false, userUnread: true }
+      : { kind: 'admin', ownerId: me, name: S.admin.name, lastMsg: p, lastMsgAt: nowMs(), lastBy: 'user', devUnread: true, userUnread: false }, { merge: true }),
+    onOpen: () => {
+      const c = asDev ? S.support.find((x) => x.id === t.id) : S.mySupport;
+      if (asDev ? c?.devUnread : c?.userUnread) setDoc(ref, asDev ? { devUnread: false } : { userUnread: false }, { merge: true });
+    },
+  });
+}
