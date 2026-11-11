@@ -108,3 +108,32 @@ exports.monthlyResults = onSchedule({ schedule: '0 8 1 * *', timeZone: TZ, regio
   await send(await tokensWhere((t) => t.kind === 'student'), { title: `🏆 ظهرت نتائج شهر ${name}`, body: 'اضغط لمشاهدة المتميزين', tag: 'board' });
   await send(await tokensWhere((t) => t.kind === 'admin'), { title: `📄 تقرير شهر ${name} جاهز`, body: 'افتح تبويب الطلاب ثم «التقرير الشهري»', tag: 'report' });
 });
+
+/* institute administration ↔ subject staff room */
+exports.onInstMessage = onDocumentCreated({ document: 'instChats/{sid}/messages/{mid}', region: REGION }, async (event) => {
+  const m = event.data.data(), sid = event.params.sid;
+  const subj = (await db.doc(`subjects/${sid}`).get()).data() || {};
+  const admins = (await db.collection('admins').get()).docs.map((d) => d.data());
+  const owners = new Set(admins
+    .filter((a) => a.username !== m.by && (a.role === 'super' || a.role === 'institute' || a.fullAccess || (a.subjectIds || []).includes(sid)))
+    .map((a) => 'admin:' + a.username));
+  await send(await tokensWhere((t) => owners.has(t.owner)), { title: `إدارة المعهد · ${subj.name || ''}`, body: `${m.byName || ''}: ${preview(m)}`, tag: 'inst-' + sid });
+});
+
+/* support conversation with the developer */
+exports.onSupportMessage = onDocumentCreated({ document: 'supportChats/{tid}/messages/{mid}', region: REGION }, async (event) => {
+  const m = event.data.data(), tid = event.params.tid;
+  if (m.side === 'user') {
+    const devs = new Set((await db.collection('admins').where('role', '==', 'super').get()).docs.map((d) => 'admin:' + d.data().username));
+    await send(await tokensWhere((t) => devs.has(t.owner)), { title: `🛠️ دعم · ${m.byName || ''}`, body: preview(m), tag: 'sup-' + tid });
+  } else {
+    const owner = tid.startsWith('st_') ? 'student:' + tid.slice(3) : 'admin:' + tid.slice(3);
+    await send(await tokensWhere((t) => t.owner === owner), { title: '🛠️ الدعم الفني', body: preview(m), tag: 'support' });
+  }
+});
+
+/* a gift of points */
+exports.onBonus = onDocumentCreated({ document: 'bonuses/{id}', region: REGION }, async (event) => {
+  const b = event.data.data();
+  await send(await tokensWhere((t) => t.owner === 'student:' + b.studentId), { title: '🎁 مبروك! وصلتك هدية', body: `+${b.points} نقطة من الإدارة${b.note ? ' · ' + b.note : ''}`, tag: 'gift' });
+});
