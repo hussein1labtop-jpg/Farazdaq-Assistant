@@ -54,7 +54,10 @@ async function studentTokens(audience = 'all') {
   return tokensWhere((t) => t.kind === 'student' && (audience === 'all' || gender[String(t.owner).slice(8)] === audience));
 }
 
-const preview = (m) => (m.type === 'sticker' ? 'ملصق 🙂' : String(m.text || '').slice(0, 90));
+const preview = (m) => (m.type === 'sticker' ? 'ملصق 🙂'
+  : m.type === 'image' ? '📷 صورة'
+  : m.type === 'file' ? (m.kind === 'video' ? '🎬 فيديو' : '📎 ' + String(m.name || 'ملف').slice(0, 40))
+  : String(m.text || '').slice(0, 90));
 
 /* a message inside a student ↔ subject-administration chat */
 exports.onChatMessage = onDocumentCreated({ document: 'chats/{cid}/messages/{mid}', region: REGION }, async (event) => {
@@ -65,12 +68,13 @@ exports.onChatMessage = onDocumentCreated({ document: 'chats/{cid}/messages/{mid
   const subj = (await db.doc(`subjects/${subjectId}`).get()).data() || {};
   if (m.side === 'student') {
     const admins = (await db.collection('admins').get()).docs.map((d) => d.data());
+    const isInst = subjectId === 'institute';
     const owners = new Set(admins
-      .filter((a) => a.role === 'super' || a.role === 'institute' || a.fullAccess || (a.subjectIds || []).includes(subjectId))
+      .filter((a) => a.role === 'super' || a.role === 'institute' || (!isInst && (a.fullAccess || (a.subjectIds || []).includes(subjectId))))
       .map((a) => 'admin:' + a.username));
-    await send(await tokensWhere((t) => owners.has(t.owner)), { title: `${m.byName || 'طالب'} · ${subj.name || ''}`, body: preview(m), tag: 'chat-' + cid });
+    await send(await tokensWhere((t) => owners.has(t.owner)), { title: `${m.byName || 'طالب'} · ${isInst ? 'إدارة المعهد' : (subj.name || '')}`, body: preview(m), tag: 'chat-' + cid });
   } else {
-    await send(await tokensWhere((t) => t.owner === 'student:' + studentId), { title: `إدارة مادة ${subj.name || ''}`, body: preview(m), tag: 'chat-' + cid });
+    await send(await tokensWhere((t) => t.owner === 'student:' + studentId), { title: subjectId === 'institute' ? 'إدارة المعهد' : `إدارة مادة ${subj.name || ''}`, body: preview(m), tag: 'chat-' + cid });
   }
 });
 
@@ -95,11 +99,37 @@ exports.onHomework = onDocumentCreated({ document: 'homeworks/{id}', region: REG
   await send(await studentTokens(h.audience || 'all'), { title: '✏️ واجب جديد', body: h.title || '', tag: 'hw-' + event.params.id });
 });
 
-/* every day at 00:01 Baghdad time: tell the students that today's exam started */
-exports.dailyExam = onSchedule({ schedule: '1 0 * * *', timeZone: TZ, region: REGION }, async () => {
-  const snap = await db.collection('examDays').where('date', '==', todayBaghdad()).get();
-  if (!snap.docs.some((d) => (d.data().count || 0) > 0)) return;
-  await send(await tokensWhere((t) => t.kind === 'student'), { title: '🧠 بدأ امتحان اليوم', body: 'ادخل واجمع نقاطك!', tag: 'exam-' + todayBaghdad() });
+/* Exams start at the hour the administration chose and last 24 hours. */
+const fmtTime = (ms) => {
+  const d = new Date(ms + 3 * 3600e3), h = d.getUTCHours(), m = d.getUTCMinutes();
+  return `${(h % 12) || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'م' : 'ص'}`;
+};
+const dayOf = (ms) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 10);
+
+/* an exam was published (only the first day of a repeated series carries announce = true) */
+exports.onExamPublished = onDocumentCreated({ document: 'exams/{id}', region: REGION }, async (event) => {
+  const e = event.data.data();
+  if (!e.announce) return;
+  const subj = (await db.doc(`subjects/${e.subjectId}`).get()).data() || {};
+  if (e.startMs > Date.now() + 60000) {
+    const when = dayOf(e.startMs) === dayOf(Date.now()) ? 'اليوم' : 'يوم ' + dayOf(e.startMs);
+    await send(await studentTokens('all'), { title: `📅 امتحان ${subj.name || ''} يبدأ ${when} الساعة ${fmtTime(e.startMs)}`, body: 'استعد!', tag: 'exam-new-' + event.params.id });
+  } else {
+    await send(await studentTokens('all'), { title: `🧠 بدأ امتحان ${subj.name || ''}`, body: 'ادخل واجمع نقاطك!', tag: 'exam-' + event.params.id });
+  }
+});
+
+/* every minute: tell the students about the exams that start right now */
+exports.examStarts = onSchedule({ schedule: 'every 1 minutes', timeZone: TZ, region: REGION }, async () => {
+  const minute = Math.floor(Date.now() / 60000) * 60000;
+  const snap = await db.collection('exams').where('startMs', '>', minute - 60000).get();
+  const starting = snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((e) => e.startMs <= minute);
+  if (!starting.length) return;
+  const tokens = await studentTokens('all');
+  for (const e of starting) {
+    const subj = (await db.doc(`subjects/${e.subjectId}`).get()).data() || {};
+    await send(tokens, { title: `🧠 بدأ امتحان ${subj.name || ''}`, body: 'ادخل واجمع نقاطك!', tag: 'exam-' + e.id });
+  }
 });
 
 /* the 1st of every month at 08:00: results are out + the report is ready */
@@ -107,17 +137,6 @@ exports.monthlyResults = onSchedule({ schedule: '0 8 1 * *', timeZone: TZ, regio
   const name = prevMonthName();
   await send(await tokensWhere((t) => t.kind === 'student'), { title: `🏆 ظهرت نتائج شهر ${name}`, body: 'اضغط لمشاهدة المتميزين', tag: 'board' });
   await send(await tokensWhere((t) => t.kind === 'admin'), { title: `📄 تقرير شهر ${name} جاهز`, body: 'افتح تبويب الطلاب ثم «التقرير الشهري»', tag: 'report' });
-});
-
-/* institute administration ↔ subject staff room */
-exports.onInstMessage = onDocumentCreated({ document: 'instChats/{sid}/messages/{mid}', region: REGION }, async (event) => {
-  const m = event.data.data(), sid = event.params.sid;
-  const subj = (await db.doc(`subjects/${sid}`).get()).data() || {};
-  const admins = (await db.collection('admins').get()).docs.map((d) => d.data());
-  const owners = new Set(admins
-    .filter((a) => a.username !== m.by && (a.role === 'super' || a.role === 'institute' || a.fullAccess || (a.subjectIds || []).includes(sid)))
-    .map((a) => 'admin:' + a.username));
-  await send(await tokensWhere((t) => owners.has(t.owner)), { title: `إدارة المعهد · ${subj.name || ''}`, body: `${m.byName || ''}: ${preview(m)}`, tag: 'inst-' + sid });
 });
 
 /* support conversation with the developer */
