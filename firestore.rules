@@ -2,23 +2,48 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // الامتحانات: يُسمح بالإنشاء، والتعديل فقط ما دام الامتحان "قيد الإجراء" (لا يمكن إعادة امتحان منتهٍ)
+    function signedIn() { return request.auth != null; }
+
+    // نتائج الامتحانات: إنشاء، ولا تعديل إلا ما دام الامتحان «قيد الإجراء» (لا يمكن إعادة امتحان منتهٍ)
     match /results/{id} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null;
-      allow update: if request.auth != null && resource.data.status == 'started';
-      allow delete: if request.auth != null;
+      allow read, create, delete: if signedIn();
+      allow update: if signedIn() && resource.data.status == 'started';
     }
 
-    // الرسائل: لا تعديل على رسالة مرسلة
+    // رسائل كل المحادثات: القراءة والإرسال والحذف، والتعديل لنص الرسالة فقط
     match /{path=**}/messages/{id} {
-      allow read, create, delete: if request.auth != null;
-      allow update: if false;
+      allow read, create, delete: if signedIn();
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'edited', 'editedAt']);
     }
 
-    // باقي البيانات: لأي جهاز مسجّل دخول مجهول (Anonymous) داخل التطبيق
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+    // أجزاء الملفات المرفقة في المحادثات
+    match /{path=**}/chunks/{id} {
+      allow read, write: if signedIn();
     }
+
+    // المحادثات (مستند المحادثة فقط، أما رسائلها فلها القاعدة أعلاه)
+    match /chats/{id}        { allow read, write: if signedIn(); }
+    match /adminChats/{id}   { allow read, write: if signedIn(); }
+    match /supportChats/{id} { allow read, write: if signedIn(); }
+
+    // باقي البيانات (مع مجموعاتها الفرعية)
+    match /students/{d=**}        { allow read, write: if signedIn(); }
+    match /avatars/{d=**}         { allow read, write: if signedIn(); }
+    match /admins/{d=**}          { allow read, write: if signedIn(); }
+    match /subjects/{d=**}        { allow read, write: if signedIn(); }
+    match /questions/{d=**}       { allow read, write: if signedIn(); }
+    match /questionGroups/{d=**}  { allow read, write: if signedIn(); }
+    match /exams/{d=**}           { allow read, write: if signedIn(); }
+    match /examDays/{d=**}        { allow read, write: if signedIn(); }
+    match /boards/{d=**}          { allow read, write: if signedIn(); }
+    match /bonuses/{d=**}         { allow read, write: if signedIn(); }
+    match /ratings/{d=**}         { allow read, write: if signedIn(); }
+    match /stickers/{d=**}        { allow read, write: if signedIn(); }
+    match /announcements/{d=**}   { allow read, write: if signedIn(); }
+    match /settings/{d=**}        { allow read, write: if signedIn(); }
+    match /homeworks/{d=**}       { allow read, write: if signedIn(); }
+    match /submissions/{d=**}     { allow read, write: if signedIn(); }
+    match /pushTokens/{d=**}      { allow read, write: if signedIn(); }
   }
 }
