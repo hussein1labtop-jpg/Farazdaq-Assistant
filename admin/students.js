@@ -3,10 +3,10 @@
 
 import {
   db, collection, doc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, writeBatch, query, where, nowMs,
-  dkey, mkey, addMonths, monthName, dayLabel, nameKey, cleanPhone, esc, $, $$, toast, modal, confirmBox, avatarHTML, GROUPS, groupLabel,
+  dkey, mkey, addMonths, monthName, dayLabel, nameKey, cleanPhone, esc, $, $$, toast, modal, confirmBox, avatarHTML, GROUPS, groupLabel, titleTag,
 } from './core.js';
 import { sfx } from './fx.js';
-import { S, isAll, mySubjects, loadAllAvatars, printHTML, printHeader, printFooter, rows } from './state.js';
+import { S, isAll, isSuper, mySubjects, loadAllAvatars, printHTML, printHeader, printFooter, rows } from './state.js';
 import { loadMonthData, studentStats, tierOf, totalTarget } from './stats.js';
 import { openStudentChat } from './chatrooms.js';
 import { subPage } from './manage.js';
@@ -68,8 +68,8 @@ export async function pageStudents(cur) {
     <div class="row wrap" style="margin-bottom:12px;justify-content:space-between">
       <span class="muted">${data.students.length} طالب${flagged ? ` · <b style="color:var(--bad)">⚠ ${flagged} بحاجة متابعة</b>` : ''}</span>
       <span class="row"><button class="btn small ghost" id="rep">📄 التقرير الشهري</button><button class="btn small" id="prt">🖨️ طباعة PDF</button></span></div>
-    <div id="sl">${list.length ? list.map((r, i) => `<button class="list-item sr ${r.st.needsFollowUp ? 'row-flag' : ''}" data-i="${i}">${avatarHTML(S.avatars.get(r.s.id), r.s.name)}
-        <span class="grow"><span class="t ${r.st.needsFollowUp ? 'red-name' : ''}">${GROUPS[r.s.gender]?.icon || ''} ${esc(r.s.name)} ${r.st.needsFollowUp ? '<span class="badge bad">⚠ تواصل مع ولي الأمر</span>' : ''}</span>
+    <div id="sl">${list.length ? list.map((r, i) => `<button class="list-item sr ${r.st.needsFollowUp ? 'row-flag' : ''}" data-i="${i}">${avatarHTML(S.avatars.get(r.s.id), r.s.name, '', r.s.emoji || '')}
+        <span class="grow"><span class="t ${r.st.needsFollowUp ? 'red-name' : ''}">${GROUPS[r.s.gender]?.icon || ''} ${titleTag(r.s)} ${esc(r.s.name)} ${r.st.needsFollowUp ? '<span class="badge bad">⚠ تواصل مع ولي الأمر</span>' : ''}</span>
         <div class="bar ${pctClass(r.st.rate)}" style="margin:6px 0 3px"><i style="width:${r.st.target ? Math.min(100, (r.st.points / r.st.target) * 100) : 0}%"></i></div>
         <small>امتحن ${r.st.taken} · فاته ${r.st.missed} · التزام ${pctText(r.st.rate)}</small></span>
         <span class="end"><b style="font-size:20px">${r.st.points}</b><small>/ ${r.st.target}</small></span></button>`).join('')
@@ -98,6 +98,9 @@ export async function pageStudents(cur) {
 export async function openStudentDetail(student, ctx) {
   const month = ctx?.month || mkey(dkey());
   const data = ctx?.data || await monthData(month);
+  const ratings = rows(await getDocs(query(collection(db, 'ratings'), where('studentId', '==', student.id))));
+  const rated = ratings.filter((x) => typeof x.score === 'number');
+  const overall = rated.length ? Math.round((rated.reduce((s, x) => s + x.score, 0) / rated.length) * 10) / 10 : null;
   const subs = ctx?.subs || mySubjects();
   const today = dkey();
   const s = studentStats(student, subs, data.examDays, data.results, month, today, data.bonuses || []);
@@ -113,8 +116,8 @@ export async function openStudentDetail(student, ctx) {
 
   const m = modal({
     wide: true,
-    body: `<div class="row" style="margin-bottom:10px">${avatarHTML(S.avatars.get(student.id), student.name, 'big')}
-      <div class="grow"><h3>${esc(student.name)}</h3>
+    body: `<div class="row" style="margin-bottom:10px">${avatarHTML(S.avatars.get(student.id), student.name, 'big', student.emoji || '')}
+      <div class="grow"><h3>${titleTag(student)} ${esc(student.name)}</h3>${student.emoji ? '<button class="link-btn" id="rmEmoji" style="color:var(--bad)">🚫 حذف الإيموجي</button>' : ''}
       <div style="direction:ltr;text-align:start">${esc(student.phone || '')}</div>
       <div class="muted" style="font-size:12px">${groupLabel(student.gender)} · انضم ${student.joinedDate ? dayLabel(student.joinedDate) : ''}</div></div></div>
       <div class="row wrap" style="margin-bottom:8px">
@@ -129,6 +132,10 @@ export async function openStudentDetail(student, ctx) {
       <div class="card" style="padding:12px;margin-top:10px"><div class="row" style="justify-content:space-between"><b>🎁 هدايا النقاط</b><button class="btn small primary" id="giveB">+ إضافة نقاط</button></div>
         <small class="muted">تُضاف إلى نقاط الشهر الحالي، ويحصل الطالب على إشعار تهنئة. وقد تتجاوز الهدف الشهري.</small>
         ${gifts.map((g) => `<div class="kv"><span>${dayLabel(dkey(g.at))}${g.note ? ' · ' + esc(g.note) : ''} <small class="muted">(${esc(g.byName || '')})</small></span><b>+${g.points}${isAll() ? ` <button class="link-btn" data-delb="${g.id}" style="color:var(--bad)">✕</button>` : ''}</b></div>`).join('')}</div>
+      <div class="card" style="padding:12px;margin-top:10px"><div class="row" style="justify-content:space-between"><b>⭐ تقييم الإدارة</b><b>${overall != null ? overall + ' / 10' : '—'}</b></div>
+        <small class="muted">قيّم الطالب من 10 في كل مادة. المعدل العام يُحسب من كل المواد التي قُيّم فيها، ويراه الطالب في «ملفي».</small>
+        ${mySubjects().map((sub) => { const r = ratings.find((x) => x.subjectId === sub.id); return `<div class="rate-row"><span class="grow">${esc(sub.emoji || '')} ${esc(sub.name)}${r ? ` <small class="muted">(${esc(r.byName || '')})</small>` : ''}</span><input class="input" type="number" inputmode="decimal" min="0" max="10" step="0.5" data-rate="${sub.id}" value="${r && typeof r.score === 'number' ? r.score : ''}" placeholder="—"></div>`; }).join('')}
+        <button class="btn small primary" id="saveRate" style="margin-top:6px">حفظ التقييم</button></div>
       <div class="row wrap" style="margin-top:14px"><button class="btn small ghost" id="prtS">🖨️ طباعة تقرير الطالب</button>
         ${isAll() ? '<button class="btn small ghost" id="edS">✏️ تعديل البيانات</button><button class="btn small danger" id="delS">🗑️ حذف الطالب</button>' : ''}</div>`,
     actions: [{ label: 'إغلاق', kind: 'primary' }],
@@ -160,6 +167,23 @@ export async function openStudentDetail(student, ctx) {
     });
     $$('[data-n]', g.root).forEach((c) => (c.onclick = () => { $('#gp', g.root).value = c.dataset.n; }));
   };
+  const rm = $('#rmEmoji', m.root);
+  if (rm) rm.onclick = async () => {
+    if (!(await confirmBox(`حذف إيموجي الطالب (${student.emoji})؟ سيظهر له أنه حُذف.`, { danger: true, ok: 'حذف الإيموجي' }))) return;
+    await updateDoc(doc(db, 'students', student.id), { emoji: '', emojiRemoved: true, emojiRemovedBy: S.admin.name });
+    student.emoji = ''; student.emojiRemoved = true; toast('تم حذف الإيموجي', 'ok'); reopen();
+  };
+  $('#saveRate', m.root).onclick = async () => {
+    try {
+      for (const inp of $$('[data-rate]', m.root)) {
+        const sid = inp.dataset.rate, raw = inp.value.trim(), id = `${student.id}_${sid}`;
+        if (raw === '') { if (ratings.find((x) => x.subjectId === sid)) await deleteDoc(doc(db, 'ratings', id)); continue; }
+        const score = Math.round(Math.min(10, Math.max(0, +raw)) * 2) / 2;
+        await setDoc(doc(db, 'ratings', id), { studentId: student.id, subjectId: sid, score, by: S.admin.username, byName: S.admin.name, at: nowMs() });
+      }
+      sfx.pop(); toast('تم حفظ التقييم ⭐', 'ok'); reopen();
+    } catch { toast('تعذّر الحفظ', 'bad'); }
+  };
   $$('[data-delb]', m.root).forEach((b) => (b.onclick = async () => {
     if (!(await confirmBox('حذف هذه الهدية وسحب نقاطها من الطالب؟', { danger: true, ok: 'حذف' }))) return;
     await deleteDoc(doc(db, 'bonuses', b.dataset.delb)); sfx.tap(); reopen();
@@ -175,11 +199,12 @@ export async function openStudentDetail(student, ctx) {
   if (ed) ed.onclick = () => {
     const e = modal({ title: 'تعديل بيانات الطالب', body: `<label class="field"><span>الاسم الثلاثي</span><input id="en" value="${esc(student.name)}"></label>
       <label class="field"><span>رقم الهاتف</span><input id="ep" dir="ltr" value="${esc(student.phone || '')}"></label>
+      ${isSuper() ? `<label class="field"><span>اللقب (يعدّله المطوّر فقط بطلب من الطالب عبر الدعم)</span><input id="et" maxlength="30" value="${esc(student.title || '')}"></label>` : ''}
       <label class="field"><span>المجموعة</span><select id="eg"><option value="boys" ${student.gender === 'boys' ? 'selected' : ''}>👦 ولد</option><option value="girls" ${student.gender === 'girls' ? 'selected' : ''}>👧 بنات</option></select></label>`,
       actions: [{ label: 'إلغاء', kind: 'ghost' }, { label: 'حفظ', kind: 'primary', onClick: async () => {
         const name = $('#en', e.root).value.trim(), phone = cleanPhone($('#ep', e.root).value);
         if (name.split(/\s+/).length < 2 || phone.length < 10) { toast('تحقق من الاسم والرقم', 'bad'); return false; }
-        await updateDoc(doc(db, 'students', student.id), { name, nameKey: nameKey(name), phone, gender: $('#eg', e.root).value });
+        await updateDoc(doc(db, 'students', student.id), { name, nameKey: nameKey(name), phone, gender: $('#eg', e.root).value, ...(isSuper() ? { title: $('#et', e.root).value.trim().slice(0, 30), titleLocked: !!$('#et', e.root).value.trim() } : {}) });
         delete cache[month]; toast('تم الحفظ', 'ok'); m.close(); location.reload();
       } }] });
   };
@@ -212,8 +237,8 @@ export function openMonthlyReport(month, subsIn) {
     const pct = (r) => Math.round((r.st.points / r.st.target) * 100);
     const perSub = (r) => subs.filter((s) => r.st.perSubject[s.id]).map((s) => `${esc(s.name)} ${r.st.perSubject[s.id].points}/${r.st.perSubject[s.id].target}`).join(' · ');
     const status = (r) => tierOf(r.st.points, target)?.name || (r.st.needsFollowUp ? 'تواصل مع ولي الأمر' : '—');
-    const line = (r, red) => `<div class="list-item ${red ? 'row-flag' : ''}" style="align-items:flex-start;cursor:default">${avatarHTML(S.avatars.get(r.s.id), r.s.name)}
-      <span class="grow"><span class="t ${red ? 'red-name' : ''}">${GROUPS[r.s.gender]?.icon || ''} ${esc(r.s.name)}</span>
+    const line = (r, red) => `<div class="list-item ${red ? 'row-flag' : ''}" style="align-items:flex-start;cursor:default">${avatarHTML(S.avatars.get(r.s.id), r.s.name, '', r.s.emoji || '')}
+      <span class="grow"><span class="t ${red ? 'red-name' : ''}">${GROUPS[r.s.gender]?.icon || ''} ${titleTag(r.s)} ${esc(r.s.name)}</span>
         <small>${r.st.points} / ${r.st.target} نقطة (${pct(r)}%) · امتحن ${r.st.taken} · فاته ${r.st.missed}${r.st.taken === 0 ? ' · <b>لم يمتحن إطلاقاً</b>' : ''}</small>
         <small>${perSub(r)}</small></span>
       ${red && r.s.phone ? `<span style="display:grid;gap:6px"><a class="btn small" href="tel:${esc(r.s.phone)}" aria-label="اتصال">📞</a><a class="btn small ok" href="${waLink(r.s.phone)}" target="_blank" rel="noopener" aria-label="واتساب">💬</a></span>` : ''}</div>`;

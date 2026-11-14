@@ -16,6 +16,7 @@ import { CHANNEL_LIST, openChannel, openBoard, openUsers, openSubjects } from '.
 import { openHomework } from './homework.js';
 import { alertUser, notifyCardHTML, bindNotifyCard, resumePush } from './notify.js';
 import { purgeAllExpired } from './homework-clean.js';
+import { showUpdateNotice } from './updates.js';
 
 const view = $('#view');
 let tok = 0, tab = 'home', chatFilter = 'all', chatSearch = '';
@@ -90,6 +91,7 @@ async function enter() {
   watch();
   resumePush('admin:' + S.admin.username);
   checkReport();
+  setTimeout(() => showUpdateNotice('admin'), 900);
   purgeAllExpired().catch(() => {});
   go('home', true);
 }

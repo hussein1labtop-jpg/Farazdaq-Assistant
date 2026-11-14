@@ -20,12 +20,12 @@ export async function openStudentChat(c) {
       <button class="btn small" id="cardBtn">بطاقة الطالب</button></div>
     <div class="muted" style="margin-top:4px">👥 ${isInst ? 'المسؤولون عن' : 'الإدارة المسؤولة عن'} ${esc(sub?.name || 'المادة')}: ${team || '—'}</div>`;
   const ov = openChat({
-    title: c.studentName || student?.name || 'طالب', subtitle: isInst ? 'إدارة المعهد' : `مادة ${sub?.name || ''}`,
-    avatar: avatarHTML(S.avatars.get(c.studentId), c.studentName || '', 'sm'),
+    title: `${student?.title ? student.title + ' ' : ''}${c.studentName || student?.name || 'طالب'}`, subtitle: isInst ? 'إدارة المعهد' : `مادة ${sub?.name || ''}`,
+    avatar: avatarHTML(S.avatars.get(c.studentId), c.studentName || '', 'sm', student?.emoji || ''),
     extra,
     msgsPath: ['chats', cid, 'messages'],
     me: { side: 'admin', id: S.admin.username, name: S.admin.name },
-    showSender: true, canAddSticker: true,
+    showSender: true, canAddSticker: true, canManage: true, moderate: true,
     onSend: (preview) => setDoc(ref, {
       studentId: c.studentId, subjectId: c.subjectId, studentName: c.studentName || student?.name || '',
       lastMsg: preview, lastMsgAt: nowMs(), lastBy: 'admin', studentUnread: true, adminUnread: false,
@@ -55,7 +55,7 @@ export function openAdminChat(other) {
     avatar: avatarHTML(other.photo, other.name, 'sm'),
     msgsPath: ['adminChats', pid, 'messages'],
     me: { side: 'admin', id: me, name: S.admin.name },
-    showSender: false, canAddSticker: true,
+    showSender: false, canAddSticker: true, canManage: true,
     onSend: (preview) => setDoc(ref, {
       members: pair, lastMsg: preview, lastMsgAt: nowMs(), lastBy: me, unread: { [other.username]: true, [me]: false },
     }, { merge: true }),
@@ -72,7 +72,7 @@ export function openSupportChat(t, asDev) {
     avatar: '<span class="av sm" style="background:var(--surface2)">🛠️</span>',
     msgsPath: ['supportChats', t.id, 'messages'],
     me: { side: asDev ? 'dev' : 'user', id: me, name: S.admin.name },
-    showSender: false, canAddSticker: asDev,
+    showSender: false, canAddSticker: asDev, canManage: true, moderate: asDev,
     onSend: (p) => setDoc(ref, asDev
       ? { lastMsg: p, lastMsgAt: nowMs(), lastBy: 'dev', devUnread: false, userUnread: true }
       : { kind: 'admin', ownerId: me, name: S.admin.name, lastMsg: p, lastMsgAt: nowMs(), lastBy: 'user', devUnread: true, userUnread: false }, { merge: true }),
