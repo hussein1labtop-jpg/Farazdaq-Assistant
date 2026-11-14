@@ -264,11 +264,37 @@ export const groupLabel = (g) => (GROUPS[g] ? `${GROUPS[g].icon} ${GROUPS[g].nam
 export const inAudience = (item, gender) => { const a = item.audience || 'all'; return a === 'all' || a === gender; };
 
 export const initials = (n) => (nameWords(n)[0] || '؟').charAt(0);
-export function avatarHTML(src, name, cls = '') {
-  return src
+/* avatar; an optional emoji badge sits on the corner of the photo */
+export function avatarHTML(src, name, cls = '', badge = '') {
+  const inner = src
     ? `<span class="av ${cls}"><img src="${src}" alt=""></span>`
     : `<span class="av ${cls} ph">${esc(initials(name))}</span>`;
+  return badge ? `<span class="avw">${inner}<i class="av-badge ${cls.includes('big') ? 'big' : ''}">${esc(badge)}</i></span>` : inner;
 }
+/* the title (لقب) a student chose, shown beside the name */
+export const titleTag = (s) => (s && s.title ? `<span class="ttl">${esc(s.title)}</span>` : '');
+export const nameHTML = (s, fallback = '') => `${titleTag(s)} ${esc((s && s.name) || fallback)}`;
+
+/* first emoji of what the user typed ('' when it is not an emoji) */
+export function firstEmoji(s) {
+  s = String(s || '').trim(); if (!s) return '';
+  const parts = (typeof Intl !== 'undefined' && Intl.Segmenter) ? [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(s)].map((x) => x.segment) : [...s];
+  const g = parts[0] || '';
+  return /\p{Extended_Pictographic}|\p{Emoji_Presentation}/u.test(g) ? g : '';
+}
+
+/* files in chats */
+export const fmtSize = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + ' م.ب' : Math.max(1, Math.round(n / 1024)) + ' ك.ب');
+export function fileToBase64(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(',')[1] || '');
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(file);
+  });
+}
+export const chatImage = (f) => compressImage(f, { max: 1280, quality: 0.72, maxBytes: 280000 });
+export const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
 export const SUBJECT_COLORS = ['#c9b57a', '#5fc9b4', '#ff8a73', '#9d8cff', '#6cb7ff', '#f2a65a', '#7ed17b', '#e279b8'];
 export const SUBJECT_PRESETS = [

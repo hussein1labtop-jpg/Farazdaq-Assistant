@@ -18,7 +18,7 @@ export const DEV = Object.freeze({
   site: 'https://hussein1labtop-jpg.github.io/Profile-/',
   id: 'FZ-HM-2026',
   year: 2026,
-  version: '1.0.0',
+  version: '1.1.0',
 });
 
 /* The only username that always exists as the developer / super-admin account. */

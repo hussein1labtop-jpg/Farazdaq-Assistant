@@ -5,7 +5,7 @@ import {
   db, configured, authReady, syncClock, nowMs, dkey, mkey, addDays, monthName, dayLabel, msToMidnight, fmtCountdown, dayStartMs, fmtClock, secOfDay,
   collection, doc, getDoc, getDocs, setDoc, onSnapshot, query, where, orderBy, limit,
   esc, $, $$, el, ls, toast, modal, confirmBox, pickFile, avatarFromFile, avatarHTML, countUp,
-  nameWords, cleanPhone, studentIdFor, nameKey, SUBJECT_COLORS, bindThemeButton, updateDoc, GROUPS, groupLabel, inAudience,
+  nameWords, cleanPhone, studentIdFor, nameKey, SUBJECT_COLORS, bindThemeButton, updateDoc, GROUPS, groupLabel, inAudience, titleTag, firstEmoji,
 } from './core.js';
 import { DEV, startGuard } from './signature.js';
 import { sfx, setSound, soundOn, confetti, buzz } from './fx.js';
@@ -13,6 +13,8 @@ import { openChat } from './chat.js';
 import { loadSubjects, studentStats, tierOf, TIERS, ensureBoard, lastMonth, POINTS_PER_EXAM } from './stats.js';
 import { alertUser, notifyCardHTML, bindNotifyCard, resumePush } from './notify.js';
 import { runExam } from './exam.js';
+import { showCard } from './card.js';
+import { showUpdateNotice, markUpdateSeen } from './updates.js';
 import { pageHomework } from './homework.js';
 
 const S = { student: null, avatar: null, tab: 'profile', dots: {}, supDot: false, avCache: new Map(), timer: null, latest: { ann: null, sch: 0 } };
@@ -85,7 +87,7 @@ function showLogin() {
       }
       ls.set('student', id);
       S.student = { id, ...s.data() };
-      sfx.start(); confetti(70);
+      sfx.start(); confetti(70); markUpdateSeen('student');
       host.innerHTML = '';
       enter();
     } catch (e) { err.textContent = 'تعذّر الدخول، تأكد من الإنترنت وحاول مرة ثانية'; btn.disabled = false; }
@@ -122,6 +124,7 @@ async function enter() {
   watchChats();
   watchGifts();
   startAlerts();
+  setTimeout(() => showUpdateNotice('student'), 900);
   resumePush('student:' + S.student.id);
   go('profile', true);
 }
@@ -213,12 +216,13 @@ function handleGifts() {
 const rows = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 async function loadMine() {
   const month = mkey(dkey());
-  const [rs, eds, bns] = await Promise.all([
+  const [rs, eds, bns, rts] = await Promise.all([
     getDocs(query(collection(db, 'results'), where('studentId', '==', S.student.id))),
     getDocs(query(collection(db, 'examDays'), where('month', '==', month))),
     getDocs(query(collection(db, 'bonuses'), where('studentId', '==', S.student.id))),
+    getDocs(query(collection(db, 'ratings'), where('studentId', '==', S.student.id))),
   ]);
-  return { results: rows(rs), examDays: rows(eds), bonuses: rows(bns) };
+  return { results: rows(rs), examDays: rows(eds), bonuses: rows(bns), ratings: rows(rts) };
 }
 const colorOf = (sub, i) => sub.color || SUBJECT_COLORS[i % SUBJECT_COLORS.length];
 function streakOf(results) {
@@ -231,8 +235,12 @@ function streakOf(results) {
 
 /* ───────────── profile ───────────── */
 async function pageProfile(cur) {
-  const [subjects, mine] = await Promise.all([loadSubjects(), loadMine()]);
+  const [subjects, mine, fresh] = await Promise.all([loadSubjects(), loadMine(), getDoc(doc(db, 'students', S.student.id))]);
   if (!cur()) return;
+  if (fresh.exists()) S.student = { id: S.student.id, ...fresh.data() };      // title / emoji may have been changed by the administration
+  const rated = mine.ratings.filter((r) => typeof r.score === 'number');
+  const overall = rated.length ? Math.round((rated.reduce((s, r) => s + r.score, 0) / rated.length) * 10) / 10 : null;
+  const subjName = Object.fromEntries(subjects.map((s) => [s.id, s.name]));
   const month = mkey(dkey()), today = dkey();
   const st = studentStats(S.student, subjects, mine.examDays, mine.results, month, today, mine.bonuses);
   const tier = tierOf(st.points, st.target);
@@ -244,10 +252,11 @@ async function pageProfile(cur) {
   view.innerHTML = `
   <section class="hero">
     <div class="row" style="position:relative;z-index:1">
-      <button id="avBtn" aria-label="تغيير الصورة" style="position:relative">${avatarHTML(S.avatar, S.student.name, 'big')}<span style="position:absolute;bottom:-4px;inset-inline-end:-4px;background:var(--gold);color:var(--ink);border-radius:10px;padding:1px 6px;font-size:13px">📷</span></button>
-      <div class="grow"><h2 style="font-size:23px">${esc(S.student.name)}</h2>
+      <button id="avBtn" aria-label="تغيير الصورة" style="position:relative">${avatarHTML(S.avatar, S.student.name, 'big', S.student.emoji || '')}<span style="position:absolute;bottom:-4px;inset-inline-end:-4px;background:var(--gold);color:var(--ink);border-radius:10px;padding:1px 6px;font-size:13px">📷</span></button>
+      <div class="grow"><h2 style="font-size:23px">${titleTag(S.student)} ${esc(S.student.name)} <button class="link-btn" id="ttlBtn" aria-label="اللقب والإيموجي" style="padding:2px 4px;font-size:18px;text-decoration:none">✏️</button></h2>
         <div class="muted" style="direction:ltr;text-align:start">${esc(S.student.phone || '')}</div>
-        <span class="chip ${tier ? 'on' : ''}" style="margin-top:6px">${tier ? tier.icon + ' ' + tier.name : 'اجمع نقاطك 💪'}</span> <span class="chip" style="margin-top:6px">${groupLabel(S.student.gender)}</span></div>
+        <span class="chip ${tier ? 'on' : ''}" style="margin-top:6px">${tier ? tier.icon + ' ' + tier.name : 'اجمع نقاطك 💪'}</span> <span class="chip" style="margin-top:6px">${groupLabel(S.student.gender)}</span>
+        ${S.student.emojiRemoved && !S.student.emoji ? '<div style="margin-top:6px;font-size:13px;color:var(--bad)">🚫 حذفت الإدارة إيموجيك السابق. اختر إيموجي آخر من ✏️</div>' : ''}</div>
     </div>
     <div class="ring-wrap" style="margin-top:14px;position:relative;z-index:1">
       <svg viewBox="0 0 150 150"><circle class="track" cx="75" cy="75" r="64" fill="none" stroke-width="14"/>
@@ -261,6 +270,9 @@ async function pageProfile(cur) {
       <div class="stat"><b>🔥 ${streakOf(mine.results)}</b><small>أيام متتالية</small></div>
     </div>
   </section>
+  ${overall != null ? `<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><b>⭐ تقييمك من الإدارة</b><b style="font-size:24px;color:var(--gold-text)">${overall}/10</b></div>
+    <div class="chips" style="flex-wrap:wrap;margin-top:8px">${rated.map((r) => `<span class="chip">${esc(subjName[r.subjectId] || '')} · ${r.score}/10</span>`).join('')}</div></div>` : ''}
+  <button class="btn primary block" id="cardBtn" style="margin-top:14px">📸 حفظ بطاقتي (صورة لستوري)</button>
 
   <h3 class="section-title">💬 مراسلة الإدارة</h3>
   ${active.length ? active.map((s, i) => `
@@ -299,6 +311,12 @@ async function pageProfile(cur) {
   $$('.chat-open').forEach((b) => (b.onclick = () => { sfx.tap(); openStudentChat(b.dataset.sid === 'institute' ? INSTITUTE : active.find((s) => s.id === b.dataset.sid)); }));
   const ib = $('#installBtn'); if (ib) ib.onclick = async () => { installEvt.prompt(); installEvt = null; ib.remove(); };
   $('#supBtn').onclick = () => { sfx.tap(); openSupport(); };
+  $('#ttlBtn').onclick = () => { sfx.tap(); editTitle(); };
+  $('#cardBtn').onclick = () => { sfx.tap(); showCard({
+    name: S.student.name, title: S.student.title || '', emoji: S.student.emoji || '', avatar: S.avatar,
+    points: st.points, target: st.target, taken: st.taken, streak: streakOf(mine.results), tier,
+    rating: overall, monthLabel: 'شهر ' + monthName(month),
+  }); };
   bindNotifyCard(view, 'student:' + S.student.id, () => go('profile', true));
   $('#aboutBtn').onclick = about;
 }
@@ -552,4 +570,39 @@ async function checkBoard() {
     ls.set('boardAlert', m);
     if (b.total) alertUser(`🏆 ظهرت نتائج شهر ${monthName(m)}`, 'اضغط لمشاهدة المتميزين', { tag: 'board-' + m });
   } catch { /* offline */ }
+}
+
+/* ───────────── title (لقب) + emoji ───────────── */
+const EMOJIS = ['🧑‍⚕️', '👨‍⚕️', '👩‍⚕️', '🦷', '🧑‍🔬', '⚗️', '🧪', '🧑‍💻', '👨‍🏫', '🧑‍🎓', '📚', '🧠', '🚀', '⭐', '🔥', '💎', '👑', '🎯', '🏆', '💪', '⚽', '🎮', '🦁', '🐯', '🌟', '🌙', '🎨', '🎧', '🛠️', '🏗️'];
+function editTitle() {
+  const s = S.student, locked = !!s.titleLocked && !!s.title;
+  let emoji = s.emoji || '';
+  const m = modal({
+    title: 'اللقب والإيموجي',
+    body: `
+      <div class="field"><span>اللقب (يظهر بجانب اسمك)</span>
+        ${locked ? `<div class="card" style="padding:10px"><b>${esc(s.title)}</b><br><small class="muted">حُفظ لقبك ولا يمكن تعديله. إن أردت تغييره فتواصل مع الدعم من «ملفي».</small></div>`
+          : `<input id="tt" maxlength="30" placeholder="مثال: د. · dr · eng · دكتور أسنان · مهندس مدني" value="${esc(s.title || '')}">
+             <small class="muted">⚠ تكتبه <b>مرة واحدة فقط</b> ولا تستطيع تعديله بعد الحفظ.</small>`}</div>
+      <div class="field"><span>الإيموجي (يظهر على زاوية صورتك)</span>
+        <div class="emoji-grid" id="eg">${EMOJIS.map((e) => `<button type="button" data-e="${e}" class="${e === emoji ? 'on' : ''}">${e}</button>`).join('')}</div>
+        <div class="row"><input id="ei" maxlength="8" placeholder="أو اكتب إيموجي آخر" value="${esc(emoji)}" style="max-width:190px">
+          <button type="button" class="link-btn" id="eclear">إزالة الإيموجي</button></div>
+        <small class="muted">إن لم يعجب الإدارة إيموجيك فقد تحذفه.</small></div>`,
+    actions: [{ label: 'إلغاء', kind: 'ghost' }, { label: 'حفظ', kind: 'primary', sticky: true, onClick: async (api, btn) => {
+      const typed = $('#ei', m.root).value.trim();
+      const em = typed ? firstEmoji(typed) : '';
+      if (typed && !em) { toast('اكتب إيموجي صحيحاً', 'bad'); return false; }
+      const title = locked ? s.title : ($('#tt', m.root).value.trim().slice(0, 30));
+      if (!locked && title && !(await confirmBox(`سيُحفظ لقبك «${esc(title)}» ولن تستطيع تعديله بعد ذلك. متأكد؟`, { ok: 'نعم، احفظ', cancel: 'رجوع' }))) return false;
+      btn.disabled = true;
+      try {
+        const upd = { emoji: em, title, titleLocked: locked || !!title, emojiRemoved: em ? false : !!s.emojiRemoved };
+        await updateDoc(doc(db, 'students', s.id), upd);
+        S.student = { ...s, ...upd }; sfx.pop(); toast('تم الحفظ ✨', 'ok'); go('profile', true);
+      } catch { toast('تعذّر الحفظ', 'bad'); btn.disabled = false; return false; }
+    } }],
+  });
+  $$('#eg button', m.root).forEach((b) => (b.onclick = () => { emoji = b.dataset.e; $('#ei', m.root).value = emoji; $$('#eg button', m.root).forEach((x) => x.classList.toggle('on', x === b)); sfx.tap(); }));
+  $('#eclear', m.root).onclick = () => { $('#ei', m.root).value = ''; $$('#eg button', m.root).forEach((x) => x.classList.remove('on')); };
 }
