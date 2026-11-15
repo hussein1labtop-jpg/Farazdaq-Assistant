@@ -61,6 +61,11 @@ export function examWindow(date, startMin = 0) {
   const startMs = dayStartMs(date) + startMin * 60000;
   return { startMs, endMs: startMs + 86400000 };
 }
+/* homework deadline: date + hour (dueMs). Older homework had a date only → it ends with that day. */
+export const hwDue = (h) => (h.dueMs != null ? h.dueMs : (h.dueDate ? dayStartMs(h.dueDate) + 86400000 : null));
+export const hwLate = (h, now = nowMs()) => { const d = hwDue(h); return d !== null && now >= d; };
+/* after the deadline the homework is closed ("فاتك الواجب") unless late submissions were allowed for it */
+export const hwClosed = (h, now = nowMs()) => hwLate(h, now) && !h.allowLate;
 export const fmtMin = (m) => { const h = Math.floor(m / 60), mi = m % 60; return ((h % 12) || 12) + ':' + String(mi).padStart(2, '0') + ' ' + (h >= 12 ? 'م' : 'ص'); };
 const pad = (n) => String(n).padStart(2, '0');
 export function addDays(d, n) { return new Date(Date.parse(d + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10); }

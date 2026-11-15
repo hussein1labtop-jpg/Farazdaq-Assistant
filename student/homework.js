@@ -4,13 +4,13 @@
 import {
   db, collection, doc, getDocs, setDoc, deleteDoc, query, where, orderBy, limit,
   nowMs, dkey, diffDays, dayLabel, esc, $, $$, el, toast, fullscreen, confirmBox,
-  pickFiles, homeworkImage, SUBJECT_COLORS, inAudience,
+  pickFiles, homeworkImage, SUBJECT_COLORS, inAudience, hwDue, hwLate, hwClosed, dayStartMs, fmtMin,
 } from './core.js';
 import { sfx, confetti, buzz } from './fx.js';
 import { loadSubjects } from './stats.js';
 import { isExpired, purgeExpired } from './homework-clean.js';
 
-const MAX_PAGES = 6;
+const MAX_PAGES = 10;
 const rows = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
 function zoom(src) {
@@ -18,13 +18,22 @@ function zoom(src) {
   z.onclick = () => z.remove(); document.body.appendChild(z);
 }
 
+/* "last time to submit: Monday 16 Nov at 6:00 PM" */
+function dueLine(h, st) {
+  if (hwDue(h) === null) return 'بدون موعد محدد';
+  const when = `${dayLabel(h.dueDate || dkey(hwDue(h)))}${h.dueMs != null ? ' الساعة ' + fmtMin(Math.round((h.dueMs - dayStartMs(h.dueDate)) / 60000)) : ' (نهاية اليوم)'}`;
+  if (st === 'missed') return 'انتهى الموعد: ' + when;
+  if (st === 'overdue') return 'انتهى الموعد (يُقبل متأخراً): ' + when;
+  const left = diffDays(dkey(), h.dueDate || dkey(hwDue(h)));
+  return `آخر موعد: ${left === 0 ? 'اليوم' : left === 1 ? 'غداً' : dayLabel(h.dueDate)}${h.dueMs != null ? ' الساعة ' + fmtMin(Math.round((h.dueMs - dayStartMs(h.dueDate)) / 60000)) : ''}`;
+}
 function statusOf(hw, sub) {
   if (sub) return sub.status === 'reviewed' ? 'reviewed' : sub.status === 'redo' ? 'redo' : 'submitted';
-  return hw.dueDate && dkey() > hw.dueDate ? 'overdue' : 'todo';
+  return hwClosed(hw) ? 'missed' : hwLate(hw) ? 'overdue' : 'todo';
 }
 const BADGE = {
   todo: ['مطلوب', 'warn'], overdue: ['متأخر', 'bad'], submitted: ['تم التسليم ✓', 'ok'],
-  reviewed: ['تم التصحيح ✅', 'ok'], redo: ['مطلوب إعادة 🔁', 'warn'],
+  reviewed: ['تم التصحيح ✅', 'ok'], redo: ['مطلوب إعادة 🔁', 'warn'], missed: ['فاتك الواجب', 'bad'],
 };
 
 export async function pageHomework(cur, { student, view, go }) {
@@ -39,14 +48,12 @@ export async function pageHomework(cur, { student, view, go }) {
   const allHw = rows(hwSnap);
   purgeExpired(allHw).catch(() => {});                // expired homework is removed automatically
   const list = allHw.filter((h) => active[h.subjectId] && !isExpired(h) && inAudience(h, student.gender));
-  const rank = (h) => ({ overdue: 0, redo: 1, todo: 2, submitted: 3, reviewed: 4 }[statusOf(h, mine[h.id])]);
+  const rank = (h) => ({ overdue: 0, redo: 1, todo: 2, submitted: 3, reviewed: 4, missed: 5 }[statusOf(h, mine[h.id])]);
   list.sort((a, b) => rank(a) - rank(b) || (a.dueDate || '9').localeCompare(b.dueDate || '9') || b.createdAt - a.createdAt);
 
   const card = (h) => {
     const sub = mine[h.id], st = statusOf(h, sub), s = active[h.subjectId];
-    const left = h.dueDate ? diffDays(dkey(), h.dueDate) : null;
-    const due = !h.dueDate ? 'بدون موعد محدد' : st === 'overdue' ? 'انتهى الموعد ' + dayLabel(h.dueDate)
-      : left === 0 ? 'آخر موعد: اليوم' : left === 1 ? 'آخر موعد: غداً' : 'آخر موعد: ' + dayLabel(h.dueDate);
+    const due = dueLine(h, st);
     return `<button class="list-item hw-it" data-id="${h.id}" style="align-items:flex-start">
       <span class="av" style="background:${s.color || SUBJECT_COLORS[s.i % SUBJECT_COLORS.length]}">${esc(s.emoji || '📚')}</span>
       <span class="grow"><span class="t">${esc(h.title)}</span><small>${esc(s.name)} · ${due}</small>
@@ -54,11 +61,13 @@ export async function pageHomework(cur, { student, view, go }) {
       <span class="badge ${BADGE[st][1]}">${BADGE[st][0]}</span></button>`;
   };
   const todo = list.filter((h) => ['overdue', 'redo', 'todo'].includes(statusOf(h, mine[h.id])));
-  const done = list.filter((h) => !todo.includes(h));
+  const missedList = list.filter((h) => statusOf(h, mine[h.id]) === 'missed');
+  const done = list.filter((h) => !todo.includes(h) && !missedList.includes(h));
 
   view.innerHTML = `<h1 class="page-title">الواجبات ✏️</h1>
     ${list.length ? `${todo.length ? `<h3 class="section-title" style="margin-top:4px">مطلوب منك (${todo.length})</h3>${todo.map(card).join('')}` : '<div class="card" style="text-align:center">🎉 لا يوجد واجب مطلوب منك الآن</div>'}
-    ${done.length ? `<h3 class="section-title">تم تسليمها</h3>${done.map(card).join('')}` : ''}`
+    ${done.length ? `<h3 class="section-title">تم تسليمها</h3>${done.map(card).join('')}` : ''}
+    ${missedList.length ? `<h3 class="section-title" style="color:var(--bad)">فاتتك (${missedList.length})</h3>${missedList.map(card).join('')}` : ''}`
       : '<div class="empty"><span class="big">📭</span>لا توجد واجبات حالياً.<br>ستظهر هنا عندما ينشرها المدرّس.</div>'}`;
 
   $$('.hw-it').forEach((b) => (b.onclick = () => { sfx.tap(); openHomework(list.find((h) => h.id === b.dataset.id), mine[b.dataset.id], active[list.find((h) => h.id === b.dataset.id).subjectId], student, () => go('hw', true)); }));
@@ -70,7 +79,8 @@ async function openHomework(hw, sub, subject, student, refresh) {
   let images = [];                      // data URLs (existing + new)
   let draftText = sub?.text || '';
   const st = statusOf(hw, sub);
-  const canEdit = st !== 'reviewed';
+  const closed = hwClosed(hw);
+  const canEdit = st !== 'reviewed' && (!closed || st === 'redo');
   const hwImgs = [];                    // the questions: one or many photos
   if (hw.img) hwImgs.push(hw.img);
   if (hw.imgCount) {
@@ -94,10 +104,10 @@ async function openHomework(hw, sub, subject, student, refresh) {
       <div class="card"><div class="row" style="justify-content:space-between"><b>${esc(subject.emoji || '')} ${esc(subject.name)}</b><span class="badge ${BADGE[st][1]}">${BADGE[st][0]}</span></div>
         ${hw.desc ? `<div class="hw-desc">${esc(hw.desc)}</div>` : ''}
         ${hwImgs.length ? `<div class="stack" style="margin:6px 0 10px">${hwImgs.map((s) => `<img class="hwq" src="${s}" alt="" style="width:100%;border-radius:12px;display:block">`).join('')}</div>` : ''}
-        <small class="muted">${hw.dueDate ? 'آخر موعد: ' + dayLabel(hw.dueDate) : 'بدون موعد محدد'}</small></div>
+        <small class="muted">${dueLine(hw, st)}</small></div>
       ${feedback}
-      <h3 class="section-title">${sub ? 'تسليمك' : 'سلّم واجبك'}</h3>
-      ${canEdit ? '' : '<div class="muted" style="margin-bottom:8px">تم تصحيح الواجب ولا يمكن تعديل التسليم.</div>'}
+      ${st === 'missed' ? '' : `<h3 class="section-title">${sub ? 'تسليمك' : 'سلّم واجبك'}</h3>`}
+      ${canEdit ? '' : st === 'missed' ? '<div class="feedback redo" style="background:rgba(255,123,107,.14);border-color:rgba(255,123,107,.5)"><b>⛔ فاتك الواجب</b><div>انتهى موعد التسليم ولم يعد التسليم متاحاً. يمكنك فقط الاطلاع على الأسئلة.</div></div>' : `<div class="muted" style="margin-bottom:8px">${st === 'reviewed' ? 'تم تصحيح الواجب ولا يمكن تعديل التسليم.' : 'انتهى موعد التسليم ولا يمكن تعديل التسليم الآن.'}</div>`}
       <div class="thumbs" id="thumbs">${images.map((src, i) => `<div class="thumb" data-i="${i}"><img src="${src}" alt="">${canEdit ? `<button class="x" data-rm="${i}" aria-label="حذف">✕</button>` : ''}</div>`).join('')}
         ${canEdit && images.length < MAX_PAGES ? '<button class="thumb add" id="addImg" aria-label="إضافة صورة">+</button>' : ''}</div>
       ${canEdit ? `<label class="field"><span>ملاحظة أو جواب مكتوب (اختياري إذا أرفقت صورة)</span><textarea id="hwText" placeholder="اكتب هنا…">${esc(draftText)}</textarea></label>
@@ -123,6 +133,7 @@ async function openHomework(hw, sub, subject, student, refresh) {
 
   async function submit() {
     const text = $('#hwText', body).value.trim();
+    if (hwClosed(hw) && st !== 'redo') { sfx.error(); toast('انتهى موعد التسليم، فاتك الواجب', 'bad'); return; }
     if (!images.length && !text) { sfx.error(); return toast('أرفق صورة أو اكتب جوابك', 'bad'); }
     const btn = $('#send', body); btn.disabled = true; btn.textContent = 'جارٍ الرفع…';
     try {
@@ -132,7 +143,7 @@ async function openHomework(hw, sub, subject, student, refresh) {
       await setDoc(doc(db, 'submissions', sid), {
         homeworkId: hw.id, subjectId: hw.subjectId, studentId: student.id, studentName: student.name,
         text, pageCount: images.length, status: 'submitted', submittedAt: nowMs(),
-        late: !!(hw.dueDate && dkey() > hw.dueDate), grade: null, comment: null,
+        late: hwLate(hw), grade: null, comment: null,
       });
       sfx.win(); buzz(30); confetti(70); toast('تم تسليم الواجب بنجاح ✓', 'ok');
       ov.close(); refresh();
