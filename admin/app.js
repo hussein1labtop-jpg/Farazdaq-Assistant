@@ -17,14 +17,13 @@ import { openHomework } from './homework.js';
 import { alertUser, notifyCardHTML, bindNotifyCard, resumePush } from './notify.js';
 import { purgeAllExpired } from './homework-clean.js';
 import { showUpdateNotice } from './updates.js';
+import { installCardHTML, bindInstallCard } from './install.js';
 
 const view = $('#view');
 let tok = 0, tab = 'home', chatFilter = 'all', chatSearch = '';
 
 startGuard();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-let installEvt = null;
-addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; });
 
 boot();
 async function boot() {
@@ -183,7 +182,6 @@ async function pageHome(cur) {
   const a = S.admin, me = a.username;
   const others = S.admins.filter((x) => x.username !== me).sort((x, y) => (x.role === 'super' ? -1 : 0) - (y.role === 'super' ? -1 : 0));
   const subs = (a.role === 'super' || a.role === 'institute') ? 'كل المواد' : S.subjects.filter((s) => (a.subjectIds || []).includes(s.id)).map((s) => esc(s.name)).join('، ') || 'لم تُحدَّد مادة';
-  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
   view.innerHTML = `
   <div class="card" style="text-align:center">
     <button id="avBtn" style="position:relative">${avatarHTML(a.photo, a.name, 'big')}<span style="position:absolute;bottom:-4px;inset-inline-end:-4px;background:var(--navy);color:var(--cream);border-radius:10px;padding:1px 6px;font-size:13px">📷</span></button>
@@ -196,8 +194,7 @@ async function pageHome(cur) {
       ${avatarHTML(o.photo, o.name)}<span class="t">${esc(o.name)}<small>${ROLES[o.role] || ''}${o.role === 'teacher' || o.role === 'assistant' ? ' · ' + ((o.subjectIds || []).map((id) => subjectById(id)?.name).filter(Boolean).join('، ') || '') : ''}</small></span>
       <span class="end"><span class="dot inline" data-adm-dot="${[me, o.username].sort().join('__')}" ${S.adminChats[[me, o.username].sort().join('__')]?.unread?.[me] ? '' : 'hidden'}></span> 💬</span></button>`).join('')
     : '<div class="empty-s">لا يوجد أعضاء آخرون بعد. أضِفهم من «المزيد ← الحسابات».</div>'}
-  ${!standalone ? `<div class="card" style="margin-top:16px;text-align:center"><b>ثبّت التطبيق 📲</b>
-    <p class="muted" style="margin:6px 0 10px;font-size:14px">${installEvt ? '' : 'من المتصفح: القائمة ⋮ ← «إضافة إلى الشاشة الرئيسية».'}</p>${installEvt ? '<button class="btn small" id="installBtn">تثبيت</button>' : ''}</div>` : ''}`;
+  ${installCardHTML()}`;
   $('#avBtn').onclick = async () => {
     const f = await pickFile(); if (!f) return;
     try {
@@ -215,7 +212,7 @@ async function pageHome(cur) {
     });
   };
   $$('.adm').forEach((b) => (b.onclick = () => { sfx.tap(); openAdminChat(S.admins.find((x) => x.username === b.dataset.u)); }));
-  const ib = $('#installBtn'); if (ib) ib.onclick = () => { installEvt.prompt(); installEvt = null; ib.remove(); };
+  bindInstallCard(view);
   bindNotifyCard(view, 'admin:' + me, () => go('home', true));
 }
 

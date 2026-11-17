@@ -9,6 +9,7 @@
 <head>
   <meta charset="utf-8">
   <script>(function(){var d=document.documentElement,t=null;try{t=JSON.parse(localStorage.getItem("fz_theme"))}catch(e){}d.dataset.theme=(t==="light"||t==="dark")?t:d.dataset.themeDefault})()</script>
+  <script>window.__fzInstall=null;addEventListener("beforeinstallprompt",function(e){e.preventDefault();window.__fzInstall=e;dispatchEvent(new Event("fz-install-ready"))})</script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#2b3244">
   <meta name="author" content="HUSSEIN MHMOOD">
@@ -44,6 +45,7 @@
   </div>
   <div id="loginHost"></div>
   <div id="printRoot"></div>
+  <script type="module">import { startInstallPrompt } from "./install.js"; startInstallPrompt();</script>
   <script type="module" src="app.js"></script>
 </body>
 </html>
