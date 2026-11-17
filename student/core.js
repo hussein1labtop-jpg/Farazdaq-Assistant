@@ -266,6 +266,19 @@ export function countUp(node, to, ms = 700) {
 /* boys / girls groups: homework, announcements and schedules are published to one group or to everybody */
 export const GROUPS = { boys: { icon: '👦', name: 'ولد' }, girls: { icon: '👧', name: 'بنات' } };
 export const groupLabel = (g) => (GROUPS[g] ? `${GROUPS[g].icon} ${GROUPS[g].name}` : '—');
+/* where the student comes from: institute (in person) or outside the institute. Old accounts without the field count as in-person. */
+export const isExternal = (s) => !!s && s.origin === 'external';
+export const originLabel = (s) => (isExternal(s) ? '🌍 خارج المعهد' + (s.school ? ' · ' + s.school : '') : '🏫 حضوري');
+export const ORIGIN_FILTERS = [['all', 'كل الطلاب'], ['inperson', '🏫 حضوري'], ['external', '🌍 خارج المعهد']];
+export const inOrigin = (s, o) => o === 'all' || (o === 'external' ? isExternal(s) : !isExternal(s));
+/* birthday 'YYYY-MM-DD' against today's key: is it his birthday today, and how old is he turning */
+export function birthdayToday(birth, today) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(birth || '')) return null;
+  let md = birth.slice(5);
+  const y = +today.slice(0, 4), leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  if (md === '02-29' && !leap) md = '02-28';
+  return today.slice(5) === md ? { age: y - +birth.slice(0, 4), year: y } : null;
+}
 export const inAudience = (item, gender) => { const a = item.audience || 'all'; return a === 'all' || a === gender; };
 
 export const initials = (n) => (nameWords(n)[0] || '؟').charAt(0);

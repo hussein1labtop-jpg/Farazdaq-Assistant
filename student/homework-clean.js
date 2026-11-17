@@ -4,11 +4,11 @@
 import { db, collection, doc, getDocs, query, where, writeBatch, dkey, addDays } from './core.js';
 
 /*
- Automatic clean-up so the database never fills up:
- a homework (its text, its question photos, every student's submission and their photos) is deleted
- one full day after the submission period ends.
-   due date D  → students can submit until the end of D, the teacher has D+1 to review, and from D+2 it is deleted.
-   no due date → treated as "7 days after publishing".
+ Homework is NEVER deleted automatically any more: the administration keeps everything (text, photos, submissions, grades)
+ until a teacher deletes it by hand (or deletes only the submitted photos to free space).
+ `isExpired` is only used on the STUDENT side to hide an old homework from the student's list one day after the deadline.
+   due date D  → students can submit until the end of D and the homework disappears from the student's list from D+2.
+   no due date → hidden from students 7 days after publishing.
 */
 export const GRACE_DAYS = 1;
 export const NO_DUE_DAYS = 7;
@@ -37,11 +37,6 @@ export async function deleteHomework(hw) {
   await deleteRefs([doc(db, 'homeworks', hw.id)]);
 }
 
-/* delete every expired homework of the given list */
-export async function purgeExpired(list) {
-  for (const hw of list) if (isExpired(hw)) await deleteHomework(hw);
-}
-export async function purgeAllExpired() {
-  const snap = await getDocs(collection(db, 'homeworks'));
-  await purgeExpired(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-}
+/* kept only so older code keeps working: automatic deletion was removed on purpose */
+export async function purgeExpired() { /* no automatic deletion */ }
+export async function purgeAllExpired() { /* no automatic deletion */ }

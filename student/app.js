@@ -15,6 +15,7 @@ import { alertUser, notifyCardHTML, bindNotifyCard, resumePush } from './notify.
 import { runExam } from './exam.js';
 import { showCard } from './card.js';
 import { showUpdateNotice, markUpdateSeen } from './updates.js';
+import { birthdayCardHTML, bindBirthdayCard, celebrateBirthday } from './birthday.js';
 import { installCardHTML, bindInstallCard } from './install.js';
 import { pageHomework } from './homework.js';
 
@@ -61,24 +62,30 @@ function showLogin() {
     <label class="field"><span>اسمك الثلاثي</span><input id="lgName" autocomplete="name" placeholder="مثال: علي حسن محمد"></label>
     <label class="field"><span>رقم هاتفك</span><input id="lgPhone" inputmode="tel" autocomplete="tel" placeholder="07xxxxxxxxx"></label>
     <div class="field"><span>المجموعة</span><div class="seg" id="lgGender" style="margin:0"><button type="button" data-g="boys">👦 ولد</button><button type="button" data-g="girls">👧 بنات</button></div></div>
+    <div class="field"><span>أنت طالب...</span><div class="seg" id="lgOrigin" style="margin:0"><button type="button" data-o="inperson">🏫 حضوري في معهد الفرزدق</button><button type="button" data-o="external">🌍 من خارج المعهد</button></div></div>
+    <label class="field" id="lgSchoolBox" hidden><span>من أي مدرسة؟</span><input id="lgSchool" autocomplete="off" placeholder="اسم مدرستك"></label>
     <div class="err" id="lgErr"></div>
     <button class="btn primary block" id="lgGo">ابدأ التحدي 🚀</button>
   </div></div>`;
-  let gender = null;
+  let gender = null, origin = null;
   $$('#lgGender button').forEach((b) => (b.onclick = () => { gender = b.dataset.g; sfx.tap(); $$('#lgGender button').forEach((x) => x.classList.toggle('on', x === b)); }));
+  $$('#lgOrigin button').forEach((b) => (b.onclick = () => { origin = b.dataset.o; sfx.tap(); $$('#lgOrigin button').forEach((x) => x.classList.toggle('on', x === b)); $('#lgSchoolBox').hidden = origin !== 'external'; if (origin === 'external') $('#lgSchool').focus(); }));
   $('#lgGo').onclick = async () => {
     const name = $('#lgName').value.trim().replace(/\s+/g, ' '), phone = cleanPhone($('#lgPhone').value);
     const err = $('#lgErr');
     if (nameWords(name).length < 3) { err.textContent = 'اكتب اسمك الثلاثي كاملاً (ثلاث كلمات على الأقل)'; sfx.error(); return; }
     if (phone.length < 10) { err.textContent = 'اكتب رقم هاتف صحيح'; sfx.error(); return; }
     if (!gender) { err.textContent = 'اختر مجموعتك: ولد أو بنات'; sfx.error(); return; }
+    if (!origin) { err.textContent = 'اختر: طالب حضوري في المعهد أو من خارج المعهد'; sfx.error(); return; }
+    const school = $('#lgSchool').value.trim().replace(/\s+/g, ' ').slice(0, 60);
+    if (origin === 'external' && school.length < 2) { err.textContent = 'اكتب اسم مدرستك'; sfx.error(); return; }
     const btn = $('#lgGo'); btn.disabled = true; err.textContent = '';
     try {
       const id = studentIdFor(name, phone);
       const ref = doc(db, 'students', id);
       let s = await getDoc(ref);
       if (!s.exists()) {
-        await setDoc(ref, { name, nameKey: nameKey(name), phone, gender, joinedDate: dkey(), createdAt: nowMs() });
+        await setDoc(ref, { name, nameKey: nameKey(name), phone, gender, origin, ...(origin === 'external' ? { school } : {}), joinedDate: dkey(), createdAt: nowMs() });
         s = await getDoc(ref);
       } else if (!s.data().gender) {
         await updateDoc(ref, { gender });
@@ -124,6 +131,7 @@ async function enter() {
   watchGifts();
   startAlerts();
   setTimeout(() => showUpdateNotice('student'), 900);
+  setTimeout(() => celebrateBirthday(S.student), 1600);
   resumePush('student:' + S.student.id);
   go('profile', true);
 }
@@ -270,6 +278,7 @@ async function pageProfile(cur) {
   </section>
   ${overall != null ? `<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><b>⭐ تقييمك من الإدارة</b><b style="font-size:24px;color:var(--gold-text)">${overall}/10</b></div>
     <div class="chips" style="flex-wrap:wrap;margin-top:8px">${rated.map((r) => `<span class="chip">${esc(subjName[r.subjectId] || '')} · ${r.score}/10</span>`).join('')}</div></div>` : ''}
+  ${birthdayCardHTML(S.student)}
   <button class="btn primary block" id="cardBtn" style="margin-top:14px">📸 حفظ بطاقتي (صورة لستوري)</button>
 
   <h3 class="section-title">💬 مراسلة الإدارة</h3>
@@ -306,6 +315,7 @@ async function pageProfile(cur) {
   };
   $$('.chat-open').forEach((b) => (b.onclick = () => { sfx.tap(); openStudentChat(b.dataset.sid === 'institute' ? INSTITUTE : active.find((s) => s.id === b.dataset.sid)); }));
   bindInstallCard(view);
+  bindBirthdayCard(S, () => go('profile', true));
   $('#supBtn').onclick = () => { sfx.tap(); openSupport(); };
   $('#ttlBtn').onclick = () => { sfx.tap(); editTitle(); };
   $('#cardBtn').onclick = () => { sfx.tap(); showCard({
