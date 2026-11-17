@@ -15,7 +15,6 @@ import { pageStudents } from './students.js';
 import { CHANNEL_LIST, openChannel, openBoard, openUsers, openSubjects } from './manage.js';
 import { openHomework } from './homework.js';
 import { alertUser, notifyCardHTML, bindNotifyCard, resumePush } from './notify.js';
-import { purgeAllExpired } from './homework-clean.js';
 import { showUpdateNotice } from './updates.js';
 import { installCardHTML, bindInstallCard } from './install.js';
 
@@ -91,7 +90,6 @@ async function enter() {
   resumePush('admin:' + S.admin.username);
   checkReport();
   setTimeout(() => showUpdateNotice('admin'), 900);
-  purgeAllExpired().catch(() => {});
   go('home', true);
 }
 

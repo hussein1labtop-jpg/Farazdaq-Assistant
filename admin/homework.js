@@ -4,12 +4,12 @@
 import {
   db, collection, doc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, writeBatch, query, where, orderBy,
   nowMs, dkey, addDays, dayLabel, fmtClock, secOfDay, esc, $, $$, el, toast, modal, confirmBox,
-  pickFiles, homeworkImage, avatarHTML, inAudience, hwDue, hwClosed, dayStartMs, fmtMin,
+  pickFiles, homeworkImage, avatarHTML, inAudience, hwDue, hwClosed, dayStartMs, fmtMin, groupLabel,
 } from './core.js';
 import { sfx } from './fx.js';
-import { S, mySubjects, subjectById, rows, loadAllAvatars } from './state.js';
+import { S, mySubjects, subjectById, rows, loadAllAvatars, printHTML, printHeader, printFooter } from './state.js';
 import { subPage } from './manage.js';
-import { isExpired, deleteHomework, purgeAllExpired, lastKeepDay } from './homework-clean.js';
+import { isExpired, deleteHomework } from './homework-clean.js';
 
 const STATUS = {
   submitted: ['بانتظار التصحيح', 'warn'], reviewed: ['مصحّح ✅', 'ok'], redo: ['طُلبت إعادة 🔁', 'warn'],
@@ -54,9 +54,8 @@ export function openHomework() {
       getDocs(query(collection(db, 'homeworks'), where('subjectId', '==', sid))),
       getDocs(query(collection(db, 'submissions'), where('subjectId', '==', sid))),
     ]);
-    const hws = rows(hwSnap).filter((h) => !isExpired(h)).sort((a, b) => b.createdAt - a.createdAt);
+    const hws = rows(hwSnap).sort((a, b) => b.createdAt - a.createdAt);
     const all = rows(subSnap);
-    purgeAllExpired().catch(() => {});                  // expired homework is removed automatically
 
     body.innerHTML = `
       ${subs.length > 1 ? `<div class="chips">${subs.map((s) => `<button class="chip ${s.id === sid ? 'on' : ''}" data-s="${s.id}">${esc(s.emoji || '')} ${esc(s.name)}</button>`).join('')}</div>` : ''}
@@ -64,11 +63,18 @@ export function openHomework() {
       ${hws.length ? hws.map((h) => {
         const mine = all.filter((x) => x.homeworkId === h.id), pend = mine.filter((x) => x.status === 'submitted').length;
         return `<button class="list-item hw" data-id="${h.id}"><span class="grow"><span class="t">${esc(h.title)}</span>
-          <small>${audLabel(h)} · ${dueText(h)} · ${mine.length} تسليم</small><small>🗑️ يُحذف تلقائياً بعد ${dayLabel(lastKeepDay(h))}</small></span>
+          <small>${audLabel(h)} · ${dueText(h)} · ${mine.length} تسليم</small>${isExpired(h) ? '<small>⌛ منتهٍ ومخفي عن الطلاب (محفوظ عندك)</small>' : ''}</span>
           ${pend ? `<span class="badge warn">${pend} بانتظار التصحيح</span>` : (mine.length ? '<span class="badge ok">تم تصحيحها</span>' : '')}</button>`;
       }).join('') : '<div class="empty"><span class="big">📭</span>لا توجد واجبات لهذه المادة بعد.</div>'}
-      <p class="muted" style="font-size:12px;margin-top:14px">ملاحظة: يُحذف كل واجب تلقائياً (النص والصور وكل التسليمات) بعد يوم كامل من انتهاء موعد التسليم. صحّح التسليمات وسجّل الدرجات قبل ذلك. الواجب بلا موعد يُحذف بعد 7 أيام من نشره.</p>`;
+      <p class="muted" style="font-size:12px;margin-top:14px">ملاحظة: الواجبات لا تُحذف تلقائياً أبداً وتبقى عندك. عند انتهاء العمل بواجب يمكنك حذف صور التسليمات منه (تبقى الدرجات والملاحظات) أو حذفه بالكامل.</p>
+      ${hws.some((h) => isExpired(h)) ? '<button class="btn small ghost block" id="cleanOld" style="margin-top:6px">🧹 حذف صور التسليمات من كل الواجبات المنتهية</button>' : ''}`;
     $$('.chip[data-s]', body).forEach((c) => (c.onclick = () => { sid = c.dataset.s; sfx.tap(); draw(body); }));
+    const co = $('#cleanOld', body);
+    if (co) co.onclick = async () => {
+      if (!(await confirmBox('حذف صور التسليمات من كل الواجبات المنتهية؟ تبقى الواجبات والدرجات والملاحظات، وتُحذف صور الطلاب فقط لتوفير المساحة.', { danger: true, ok: 'حذف الصور' }))) return;
+      co.disabled = true;
+      try { for (const h of hws.filter((x) => isExpired(x))) await cleanPages(h); toast('تم حذف الصور', 'ok'); draw(body); } catch { toast('تعذّر الحذف', 'bad'); co.disabled = false; }
+    };
     $('#newHw', body).onclick = () => homeworkDialog(sid, null, () => draw(body));
     $$('.hw', body).forEach((b) => (b.onclick = () => { sfx.tap(); detail(hws.find((h) => h.id === b.dataset.id), () => draw(body)); }));
   });
@@ -146,14 +152,18 @@ async function homeworkDialog(subjectId, hw, done) {
 
 /* ───────────── one homework: who handed in, who did not ───────────── */
 function detail(hw, onChange) {
-  let tab = 'in';
+  let tab = 'in', gf = 'all';
   subPage(hw.title, async function draw(body) {
     const [subSnap, stSnap] = await Promise.all([
       getDocs(query(collection(db, 'submissions'), where('homeworkId', '==', hw.id))),
       getDocs(collection(db, 'students')), loadAllAvatars().catch(() => {}),
     ]);
-    const subs = rows(subSnap).sort((a, b) => b.submittedAt - a.submittedAt);
-    const students = rows(stSnap).filter((s) => inAudience(hw, s.gender));
+    const allSt = rows(stSnap), genderOf = (id) => allSt.find((x) => x.id === id)?.gender;
+    const subsAll = rows(subSnap).sort((a, b) => b.submittedAt - a.submittedAt);
+    const subs = subsAll.filter((s) => gf === 'all' || genderOf(s.studentId) === gf);
+    const students = allSt.filter((s) => inAudience(hw, s.gender) && (gf === 'all' || s.gender === gf));
+    const cnt = (g) => subsAll.filter((s) => genderOf(s.studentId) === g).length;
+    const showB = hw.audience !== 'girls', showG = hw.audience !== 'boys';
     const handed = new Set(subs.map((s) => s.studentId));
     const missing = students.filter((s) => !handed.has(s.id)).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
     const sub = subjectById(hw.subjectId);
@@ -163,6 +173,8 @@ function detail(hw, onChange) {
         ${hw.desc ? `<div class="hw-desc">${esc(hw.desc)}</div>` : ''}${hwImgs.length ? `<div class="thumbs">${hwImgs.map((s) => `<div class="thumb"><img src="${s}" alt=""></div>`).join('')}</div>` : ''}
         <small class="muted">⏰ ${dueText(hw)}</small>${hwClosed(hw) ? ' <span class="badge bad">انتهى الموعد (مُغلق)</span>' : ''}</div>
       <div class="seg" style="margin-top:14px"><button data-t="in" class="${tab === 'in' ? 'on' : ''}">سلّموا (${subs.length})</button><button data-t="out" class="${tab === 'out' ? 'on' : ''}">${hwClosed(hw) ? 'فاتهم الواجب' : 'لم يسلّموا'} (${missing.length})</button></div>
+      <div class="chips" style="margin-top:10px">${[['all', 'الكل'], ...(showB ? [['boys', '👦 ولد']] : []), ...(showG ? [['girls', '👧 بنات']] : [])].map(([k, n]) => `<button class="chip ${gf === k ? 'on' : ''}" data-gf="${k}">${n}</button>`).join('')}</div>
+      <div class="row wrap" style="margin:6px 0 10px">${showB ? `<button class="btn small" data-ex="boys">⬇️ تحميل الأولاد (${cnt('boys')})</button>` : ''}${showG ? `<button class="btn small" data-ex="girls">⬇️ تحميل البنات (${cnt('girls')})</button>` : ''}</div>
       ${tab === 'in' ? (subs.length ? subs.map((s) => `<button class="list-item sb" data-id="${s.id}">${avatarHTML(S.avatars.get(s.studentId), s.studentName)}
           <span class="grow"><span class="t">${esc(s.studentName)}</span><small>${when(s.submittedAt)}${s.late ? ' · <b style="color:var(--bad)">متأخر</b>' : ''}${s.grade ? ' · الدرجة ' + esc(s.grade) : ''}</small></span>
           <span class="badge ${STATUS[s.status]?.[1] || ''}">${STATUS[s.status]?.[0] || ''}</span></button>`).join('')
@@ -170,6 +182,8 @@ function detail(hw, onChange) {
         : (missing.length ? missing.map((s) => `<div class="list-item" style="cursor:default">${avatarHTML(S.avatars.get(s.id), s.name)}<span class="grow t">${esc(s.name)}</span>${s.phone ? `<a class="btn small" href="tel:${esc(s.phone)}">📞</a>` : ''}</div>`).join('')
           : '<div class="empty-s">🎉 الجميع سلّموا</div>')}
       <div class="row wrap" style="margin-top:18px"><button class="btn small primary" id="editHw">✏️ تعديل الواجب</button><button class="btn small ghost" id="clean">🧹 حذف صور التسليمات</button><button class="btn small danger" id="del">🗑️ حذف الواجب</button></div>`;
+    $$('[data-gf]', body).forEach((b) => (b.onclick = () => { gf = b.dataset.gf; sfx.tap(); draw(body); }));
+    $$('[data-ex]', body).forEach((b) => (b.onclick = () => { sfx.tap(); exportList(hw, sub, b.dataset.ex, subsAll.filter((x) => genderOf(x.studentId) === b.dataset.ex)); }));
     $$('.seg button', body).forEach((b) => (b.onclick = () => { tab = b.dataset.t; sfx.tap(); draw(body); }));
     $$('.thumbs .thumb img', body).forEach((im) => (im.onclick = () => zoom(im.src)));
     $$('.sb', body).forEach((b) => (b.onclick = () => { sfx.tap(); review(subs.find((s) => s.id === b.dataset.id), () => { draw(body); onChange(); }); }));
@@ -188,6 +202,32 @@ function detail(hw, onChange) {
   });
 }
 
+/* ───────────── export the students who handed in (one group at a time): copy the names, or print/save a PDF ───────────── */
+function exportList(hw, sub, g, list) {
+  const ord = list.slice().sort((a, b) => a.submittedAt - b.submittedAt);      // in the order they handed in
+  if (!ord.length) { toast('لا يوجد ' + (g === 'boys' ? 'ولد' : 'بنات') + ' سلّموا هذا الواجب بعد', 'bad'); return; }
+  const m = modal({
+    title: `${groupLabel(g)} — ${ord.length} سلّموا`,
+    body: `<p class="modal-text">اختر طريقة التحميل:</p><div class="stack">
+      <button class="btn primary block" id="exCopy">📋 نسخ الأسماء (بالتسلسل)</button>
+      <button class="btn block" id="exPdf">📄 تحميل PDF (الاسم + التقييم + الملاحظة)</button></div>`,
+    actions: [{ label: 'إغلاق', kind: 'ghost' }],
+  });
+  $('#exCopy', m.root).onclick = async () => {
+    const text = ord.map((s, i) => `${i + 1}. ${s.studentName}`).join('\n');
+    try { await navigator.clipboard.writeText(text); }
+    catch { const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); } catch { /* empty */ } t.remove(); }
+    sfx.pop(); toast('تم نسخ الأسماء ✓ الصقها في أي محادثة', 'ok');
+  };
+  $('#exPdf', m.root).onclick = () => {
+    m.close();
+    printHTML(`${printHeader('الطلاب الذين سلّموا الواجب — ' + (g === 'boys' ? 'ولد' : 'بنات'), `${hw.title}${sub ? ' · ' + sub.name : ''} · ${ord.length} طالب`)}
+      <table><thead><tr><th>#</th><th>اسم الطالب</th><th>التقييم</th><th>الملاحظة</th></tr></thead><tbody>
+      ${ord.map((s, i) => `<tr><td>${i + 1}</td><td>${esc(s.studentName)}${s.late ? ' (متأخر)' : ''}</td><td>${esc(s.grade || '—')}</td><td>${esc(s.comment || '')}</td></tr>`).join('')}
+      </tbody></table>${printFooter()}`);
+  };
+}
+
 /* ───────────── review one submission ───────────── */
 async function review(s, done) {
   let pages = [];
@@ -195,7 +235,7 @@ async function review(s, done) {
   const m = modal({
     title: esc(s.studentName), wide: true,
     body: `<div class="muted" style="margin-bottom:8px">${when(s.submittedAt)}${s.late ? ' · <b style="color:var(--bad)">تسليم متأخر</b>' : ''}</div>
-      ${pages.length ? `<div class="thumbs">${pages.map((p) => `<div class="thumb"><img src="${p.img}" alt=""></div>`).join('')}</div>` : (s.pagesDeleted ? '<div class="empty-s">حُذفت الصور بعد انتهاء مدة الحفظ</div>' : '')}
+      ${pages.length ? `<div class="thumbs">${pages.map((p) => `<div class="thumb"><img src="${p.img}" alt=""></div>`).join('')}</div>` : (s.pagesDeleted ? '<div class="empty-s">حُذفت صور هذا التسليم (الدرجة والملاحظة محفوظتان)</div>' : '')}
       ${s.text ? `<div class="card" style="margin-bottom:10px">${esc(s.text)}</div>` : ''}
       <label class="field"><span>الدرجة (اختياري)</span><input id="gr" value="${esc(s.grade || '')}" placeholder="مثال: 9/10"></label>
       <label class="field"><span>ملاحظة للطالب (اختياري)</span><textarea id="cm">${esc(s.comment || '')}</textarea></label>`,

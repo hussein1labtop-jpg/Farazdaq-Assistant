@@ -325,7 +325,20 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
 /* ───────── print (PDF) ───────── */
 body.is-login #app { display: none; }
 #printRoot { display: none; }
+/* birthday cake */
+.cake { position: relative; width: 150px; height: 120px; margin: 34px auto 4px; }
+.cake .plate { position: absolute; bottom: 0; left: -10px; right: -10px; height: 10px; border-radius: 10px; background: #c9b57a; }
+.cake .tier1 { position: absolute; bottom: 10px; left: 0; right: 0; height: 46px; border-radius: 12px 12px 6px 6px; background: linear-gradient(#ff9ec0, #ff7aa6); }
+.cake .tier2 { position: absolute; bottom: 56px; left: 22px; right: 22px; height: 36px; border-radius: 12px 12px 4px 4px; background: linear-gradient(#fff3c9, #ffe08a); }
+.cake .drip { position: absolute; bottom: 44px; left: 0; right: 0; height: 14px; background: radial-gradient(circle at 10px 0, #fff 9px, transparent 10px) 0 0 / 26px 14px repeat-x; }
+.cake .candle { position: absolute; bottom: 92px; width: 8px; height: 24px; border-radius: 3px; background: repeating-linear-gradient(45deg, #5fc9b4 0 5px, #fff 5px 10px); }
+.cake .candle i { position: absolute; top: -17px; left: 50%; width: 10px; height: 16px; margin-left: -5px; border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%; background: radial-gradient(circle at 50% 70%, #fff6a8, #ffb020 60%, #ff6a00); animation: flame .45s infinite alternate ease-in-out; transform-origin: 50% 90%; box-shadow: 0 0 12px 3px rgba(255, 176, 32, .55); }
+@keyframes flame { from { transform: scale(1) rotate(-4deg); } to { transform: scale(1.12, 1.2) rotate(4deg); } }
+.bday-age { font-size: 54px; font-weight: 700; color: var(--gold); line-height: 1.1; }
+.bday-msg { background: var(--surface2); border-radius: 14px; padding: 10px 12px; margin-top: 10px; line-height: 1.8; }
 @media print {
+  #printRoot .pbreak { page-break-before: always; }
+  #printRoot h2.sec { font-size: 16px; margin: 4px 0 8px; padding: 4px 8px; background: #e8e3d0; border-radius: 4px; }
   body { background: #fff !important; color: #000 !important; }
   #app, .overlay, .modal-back, .toast, .nav, .fab { display: none !important; }
   #printRoot { display: block !important; direction: rtl; font-family: var(--body); padding: 6mm; }

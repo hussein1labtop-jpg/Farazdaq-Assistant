@@ -3,7 +3,7 @@
 
 import {
   db, collection, doc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, writeBatch, query, where, nowMs,
-  dkey, mkey, addMonths, monthName, dayLabel, nameKey, cleanPhone, esc, $, $$, toast, modal, confirmBox, avatarHTML, GROUPS, groupLabel, titleTag,
+  dkey, mkey, addMonths, monthName, dayLabel, nameKey, cleanPhone, esc, $, $$, toast, modal, confirmBox, avatarHTML, GROUPS, groupLabel, titleTag, isExternal, originLabel, inOrigin, ORIGIN_FILTERS,
 } from './core.js';
 import { sfx } from './fx.js';
 import { S, isAll, isSuper, mySubjects, loadAllAvatars, printHTML, printHeader, printFooter, rows } from './state.js';
@@ -11,7 +11,7 @@ import { loadMonthData, studentStats, tierOf, totalTarget } from './stats.js';
 import { openStudentChat } from './chatrooms.js';
 import { subPage } from './manage.js';
 
-const st = { month: null, sid: 'all', grp: 'all', search: '', sort: 'name' };
+const st = { month: null, sid: 'all', grp: 'all', org: 'all', search: '', sort: 'name' };
 const cache = {};
 async function monthData(month, force = false) {
   const c = cache[month];
@@ -28,9 +28,18 @@ function statSubjects() {
   const subs = mySubjects();
   return st.sid === 'all' ? subs : subs.filter((s) => s.id === st.sid);
 }
-function computeRows(data, subs, month, grp = st.grp) {
+function computeRows(data, subs, month, grp = st.grp, org = st.org) {
   const today = dkey();
-  return data.students.filter((s) => grp === 'all' || s.gender === grp).map((s) => ({ s, st: studentStats(s, subs, data.examDays, data.results, month, today, data.bonuses || []) }));
+  return data.students.filter((s) => (grp === 'all' || s.gender === grp) && inOrigin(s, org)).map((s) => ({ s, st: studentStats(s, subs, data.examDays, data.results, month, today, data.bonuses || []) }));
+}
+
+/* printing: institute students and outside students are always in separate sections (each with its own numbering) */
+function byOrigin(list, tbl) {
+  const inp = list.filter((r) => !isExternal(r.s)), ext = list.filter((r) => isExternal(r.s));
+  if (!ext.length) return tbl(inp, false);
+  if (!inp.length) return `<h2 class="sec">🌍 طلاب من خارج المعهد (${ext.length})</h2>${tbl(ext, true)}`;
+  return `<h2 class="sec">🏫 طلاب معهد الفرزدق — حضوري (${inp.length})</h2>${tbl(inp, false)}
+    <div class="pbreak"></div><h2 class="sec">🌍 طلاب من خارج المعهد (${ext.length})</h2>${tbl(ext, true)}`;
 }
 
 export async function pageStudents(cur) {
@@ -62,6 +71,7 @@ export async function pageStudents(cur) {
     <div class="chips"><button class="chip ${st.grp === 'all' ? 'on' : ''}" data-g="all">كل الطلاب (${data.students.length})</button>
       <button class="chip ${st.grp === 'girls' ? 'on' : ''}" data-g="girls">👧 بنات (${data.students.filter((s) => s.gender === 'girls').length})</button>
       <button class="chip ${st.grp === 'boys' ? 'on' : ''}" data-g="boys">👦 ولد (${data.students.filter((s) => s.gender === 'boys').length})</button></div>
+    <div class="chips">${ORIGIN_FILTERS.map(([k, n]) => `<button class="chip ${st.org === k ? 'on' : ''}" data-o="${k}">${n} (${k === 'all' ? data.students.length : data.students.filter((x) => inOrigin(x, k)).length})</button>`).join('')}</div>
     <div class="row" style="margin-bottom:10px"><input class="input grow" id="sq" placeholder="🔍 ابحث بالاسم أو الرقم" value="${esc(st.search)}">
       <select class="select" id="so" style="width:auto"><option value="name" ${st.sort === 'name' ? 'selected' : ''}>الاسم</option><option value="points" ${st.sort === 'points' ? 'selected' : ''}>الأعلى نقاطاً</option><option value="low" ${st.sort === 'low' ? 'selected' : ''}>الأقل التزاماً</option></select></div>
     ${month === thisMonth && dkey().slice(8) <= '10' ? `<button class="list-item" id="prevRep" style="margin-bottom:12px;background:rgba(201,181,122,.18)"><span class="av" style="background:var(--surface2)">📄</span><span class="t">تقرير شهر ${monthName(addMonths(thisMonth, -1))} جاهز<small>اضغط لفتح التقرير الشامل والتواصل مع أولياء الأمور</small></span></button>` : ''}
@@ -69,7 +79,7 @@ export async function pageStudents(cur) {
       <span class="muted">${data.students.length} طالب${flagged ? ` · <b style="color:var(--bad)">⚠ ${flagged} بحاجة متابعة</b>` : ''}</span>
       <span class="row"><button class="btn small ghost" id="rep">📄 التقرير الشهري</button><button class="btn small" id="prt">🖨️ طباعة PDF</button></span></div>
     <div id="sl">${list.length ? list.map((r, i) => `<button class="list-item sr ${r.st.needsFollowUp ? 'row-flag' : ''}" data-i="${i}">${avatarHTML(S.avatars.get(r.s.id), r.s.name, '', r.s.emoji || '')}
-        <span class="grow"><span class="t ${r.st.needsFollowUp ? 'red-name' : ''}">${GROUPS[r.s.gender]?.icon || ''} ${titleTag(r.s)} ${esc(r.s.name)} ${r.st.needsFollowUp ? '<span class="badge bad">⚠ تواصل مع ولي الأمر</span>' : ''}</span>
+        <span class="grow"><span class="t ${r.st.needsFollowUp ? 'red-name' : ''}">${GROUPS[r.s.gender]?.icon || ''} ${titleTag(r.s)} ${esc(r.s.name)} ${isExternal(r.s) ? `<span class="badge">🌍 ${esc(r.s.school || 'خارج المعهد')}</span>` : ''} ${r.st.needsFollowUp ? '<span class="badge bad">⚠ تواصل مع ولي الأمر</span>' : ''}</span>
         <div class="bar ${pctClass(r.st.rate)}" style="margin:6px 0 3px"><i style="width:${r.st.target ? Math.min(100, (r.st.points / r.st.target) * 100) : 0}%"></i></div>
         <small>امتحن ${r.st.taken} · فاته ${r.st.missed} · التزام ${pctText(r.st.rate)}</small></span>
         <span class="end"><b style="font-size:20px">${r.st.points}</b><small>/ ${r.st.target}</small></span></button>`).join('')
@@ -79,18 +89,20 @@ export async function pageStudents(cur) {
   $('#nm').onclick = () => { st.month = addMonths(month, 1); sfx.tap(); pageStudents(cur); };
   $$('.chip[data-s]').forEach((c) => (c.onclick = () => { st.sid = c.dataset.s; sfx.tap(); pageStudents(cur); }));
   $$('.chip[data-g]').forEach((c) => (c.onclick = () => { st.grp = c.dataset.g; sfx.tap(); pageStudents(cur); }));
+  $$('.chip[data-o]').forEach((c) => (c.onclick = () => { st.org = c.dataset.o; sfx.tap(); pageStudents(cur); }));
   $('#sq').oninput = (e) => { st.search = e.target.value; clearTimeout(st._t); st._t = setTimeout(() => pageStudents(cur), 350); };
   $('#so').onchange = (e) => { st.sort = e.target.value; pageStudents(cur); };
   $$('.sr').forEach((b) => (b.onclick = () => { sfx.tap(); openStudentDetail(list[+b.dataset.i].s, { month, data, subs }); }));
   $('#rep').onclick = () => openMonthlyReport(month, subs);
   const pr = $('#prevRep'); if (pr) pr.onclick = () => openMonthlyReport(addMonths(thisMonth, -1));
   $('#prt').onclick = () => {
-    const all = computeRows(data, subs, month).sort((a, b) => (a.s.gender || '').localeCompare(b.s.gender || '') || a.s.name.localeCompare(b.s.name, 'ar'));
-    const scope = (st.grp === 'all' ? '' : groupLabel(st.grp) + ' · ') + (st.sid === 'all' ? (isAll() ? 'جميع المواد' : subs.map((s) => s.name).join('، ')) : subs[0].name);
-    printHTML(`${printHeader('كشف نتائج الطلاب', `${monthName(month)} · ${scope} · الهدف ${target} نقطة`)}
-      <table><thead><tr><th>#</th><th>اسم الطالب</th><th>المجموعة</th><th>الهاتف</th><th>النقاط</th><th>الهدف</th><th>امتحن</th><th>فاته</th><th>الالتزام</th><th>الفئة</th></tr></thead><tbody>
-      ${all.map((r, i) => `<tr class="${r.st.needsFollowUp ? 'flag' : ''}"><td>${i + 1}</td><td class="${r.st.needsFollowUp ? 'red' : ''}">${esc(r.s.name)}</td><td>${groupLabel(r.s.gender)}</td><td dir="ltr">${esc(r.s.phone || '')}</td><td>${r.st.points}</td><td>${r.st.target}</td><td>${r.st.taken}</td><td>${r.st.missed}</td><td>${pctText(r.st.rate)}</td><td>${tierOf(r.st.points, target)?.name || (r.st.needsFollowUp ? 'متابعة ولي الأمر' : '—')}</td></tr>`).join('')}
-      </tbody></table>${printFooter()}`);
+    const sorter = (a, b) => (a.s.gender || '').localeCompare(b.s.gender || '') || a.s.name.localeCompare(b.s.name, 'ar');
+    const all = computeRows(data, subs, month).sort(sorter);
+    const scope = (st.org === 'all' ? '' : (st.org === 'external' ? 'خارج المعهد' : 'حضوري') + ' · ') + (st.grp === 'all' ? '' : groupLabel(st.grp) + ' · ') + (st.sid === 'all' ? (isAll() ? 'جميع المواد' : subs.map((s) => s.name).join('، ')) : subs[0].name);
+    const tbl = (list, ext) => `<table><thead><tr><th>#</th><th>اسم الطالب</th>${ext ? '<th>المدرسة</th>' : ''}<th>المجموعة</th><th>الهاتف</th><th>النقاط</th><th>الهدف</th><th>امتحن</th><th>فاته</th><th>الالتزام</th><th>الفئة</th></tr></thead><tbody>
+      ${list.map((r, i) => `<tr class="${r.st.needsFollowUp ? 'flag' : ''}"><td>${i + 1}</td><td class="${r.st.needsFollowUp ? 'red' : ''}">${esc(r.s.name)}</td>${ext ? `<td>${esc(r.s.school || '')}</td>` : ''}<td>${groupLabel(r.s.gender)}</td><td dir="ltr">${esc(r.s.phone || '')}</td><td>${r.st.points}</td><td>${r.st.target}</td><td>${r.st.taken}</td><td>${r.st.missed}</td><td>${pctText(r.st.rate)}</td><td>${tierOf(r.st.points, target)?.name || (r.st.needsFollowUp ? 'متابعة ولي الأمر' : '—')}</td></tr>`).join('')}
+      </tbody></table>`;
+    printHTML(`${printHeader('كشف نتائج الطلاب', `${monthName(month)} · ${scope} · الهدف ${target} نقطة`)}${byOrigin(all, tbl)}${printFooter()}`);
   };
 }
 
@@ -119,6 +131,7 @@ export async function openStudentDetail(student, ctx) {
     body: `<div class="row" style="margin-bottom:10px">${avatarHTML(S.avatars.get(student.id), student.name, 'big', student.emoji || '')}
       <div class="grow"><h3>${titleTag(student)} ${esc(student.name)}</h3>${student.emoji ? '<button class="link-btn" id="rmEmoji" style="color:var(--bad)">🚫 حذف الإيموجي</button>' : ''}
       <div style="direction:ltr;text-align:start">${esc(student.phone || '')}</div>
+      <div class="muted" style="font-size:12px">${esc(originLabel(student))}${student.birthday ? ' · 🎂 ' + esc(student.birthday) : ''}</div>
       <div class="muted" style="font-size:12px">${groupLabel(student.gender)} · انضم ${student.joinedDate ? dayLabel(student.joinedDate) : ''}</div></div></div>
       <div class="row wrap" style="margin-bottom:8px">
         ${student.phone ? `<a class="btn small" href="tel:${esc(student.phone)}">📞 اتصال</a><a class="btn small ok" href="${wa}" target="_blank" rel="noopener">💬 واتساب</a>` : ''}
@@ -200,13 +213,18 @@ export async function openStudentDetail(student, ctx) {
     const e = modal({ title: 'تعديل بيانات الطالب', body: `<label class="field"><span>الاسم الثلاثي</span><input id="en" value="${esc(student.name)}"></label>
       <label class="field"><span>رقم الهاتف</span><input id="ep" dir="ltr" value="${esc(student.phone || '')}"></label>
       ${isSuper() ? `<label class="field"><span>اللقب (يعدّله المطوّر فقط بطلب من الطالب عبر الدعم)</span><input id="et" maxlength="30" value="${esc(student.title || '')}"></label>` : ''}
+      <label class="field"><span>المصدر</span><select id="eo"><option value="inperson" ${!isExternal(student) ? 'selected' : ''}>🏫 حضوري (معهد الفرزدق)</option><option value="external" ${isExternal(student) ? 'selected' : ''}>🌍 خارج المعهد</option></select></label>
+      <label class="field" id="esBox" ${isExternal(student) ? '' : 'hidden'}><span>المدرسة</span><input id="es" value="${esc(student.school || '')}"></label>
       <label class="field"><span>المجموعة</span><select id="eg"><option value="boys" ${student.gender === 'boys' ? 'selected' : ''}>👦 ولد</option><option value="girls" ${student.gender === 'girls' ? 'selected' : ''}>👧 بنات</option></select></label>`,
       actions: [{ label: 'إلغاء', kind: 'ghost' }, { label: 'حفظ', kind: 'primary', onClick: async () => {
+        const org = $('#eo', e.root).value, school = $('#es', e.root).value.trim().slice(0, 60);
+        if (org === 'external' && school.length < 2) { toast('اكتب اسم المدرسة', 'bad'); return false; }
         const name = $('#en', e.root).value.trim(), phone = cleanPhone($('#ep', e.root).value);
         if (name.split(/\s+/).length < 2 || phone.length < 10) { toast('تحقق من الاسم والرقم', 'bad'); return false; }
-        await updateDoc(doc(db, 'students', student.id), { name, nameKey: nameKey(name), phone, gender: $('#eg', e.root).value, ...(isSuper() ? { title: $('#et', e.root).value.trim().slice(0, 30), titleLocked: !!$('#et', e.root).value.trim() } : {}) });
+        await updateDoc(doc(db, 'students', student.id), { name, nameKey: nameKey(name), phone, gender: $('#eg', e.root).value, origin: org, school: org === 'external' ? school : '', ...(isSuper() ? { title: $('#et', e.root).value.trim().slice(0, 30), titleLocked: !!$('#et', e.root).value.trim() } : {}) });
         delete cache[month]; toast('تم الحفظ', 'ok'); m.close(); location.reload();
       } }] });
+    $('#eo', e.root).onchange = (ev) => { $('#esBox', e.root).hidden = ev.target.value !== 'external'; };
   };
   const del = $('#delS', m.root);
   if (del) del.onclick = async () => {
@@ -222,14 +240,14 @@ export async function openStudentDetail(student, ctx) {
 
 /* ═════════════ monthly report: everyone, who sat the exams, who did not, and who must be followed up ═════════════ */
 export function openMonthlyReport(month, subsIn) {
-  let grp = st.grp;
+  let grp = st.grp, org = st.org;
   subPage(`تقرير شهر ${monthName(month)}`, async function draw(body) {
     body.innerHTML = '<div class="empty"><span class="big">⏳</span>جارٍ إعداد التقرير…</div>';
     const [data] = await Promise.all([monthData(month, true), loadAllAvatars().catch(() => {})]);
     const subs = subsIn || mySubjects();
     const target = totalTarget(subs, month, data.examDays);
     if (!target) { body.innerHTML = '<div class="empty"><span class="big">📭</span>لا توجد امتحانات في هذا الشهر.</div>'; return; }
-    const all = computeRows(data, subs, month, grp).sort((a, b) => a.s.name.localeCompare(b.s.name, 'ar'));
+    const all = computeRows(data, subs, month, grp, org).sort((a, b) => a.s.name.localeCompare(b.s.name, 'ar'));
     const flagged = all.filter((r) => r.st.needsFollowUp).sort((a, b) => a.st.points - b.st.points);
     const rest = all.filter((r) => !r.st.needsFollowUp).sort((a, b) => b.st.points - a.st.points);
     const never = all.filter((r) => r.st.taken === 0).length;
@@ -238,13 +256,14 @@ export function openMonthlyReport(month, subsIn) {
     const perSub = (r) => subs.filter((s) => r.st.perSubject[s.id]).map((s) => `${esc(s.name)} ${r.st.perSubject[s.id].points}/${r.st.perSubject[s.id].target}`).join(' · ');
     const status = (r) => tierOf(r.st.points, target)?.name || (r.st.needsFollowUp ? 'تواصل مع ولي الأمر' : '—');
     const line = (r, red) => `<div class="list-item ${red ? 'row-flag' : ''}" style="align-items:flex-start;cursor:default">${avatarHTML(S.avatars.get(r.s.id), r.s.name, '', r.s.emoji || '')}
-      <span class="grow"><span class="t ${red ? 'red-name' : ''}">${GROUPS[r.s.gender]?.icon || ''} ${titleTag(r.s)} ${esc(r.s.name)}</span>
+      <span class="grow"><span class="t ${red ? 'red-name' : ''}">${GROUPS[r.s.gender]?.icon || ''} ${titleTag(r.s)} ${esc(r.s.name)}${isExternal(r.s) ? ` <span class="badge">🌍 ${esc(r.s.school || 'خارج المعهد')}</span>` : ''}</span>
         <small>${r.st.points} / ${r.st.target} نقطة (${pct(r)}%) · امتحن ${r.st.taken} · فاته ${r.st.missed}${r.st.taken === 0 ? ' · <b>لم يمتحن إطلاقاً</b>' : ''}</small>
         <small>${perSub(r)}</small></span>
       ${red && r.s.phone ? `<span style="display:grid;gap:6px"><a class="btn small" href="tel:${esc(r.s.phone)}" aria-label="اتصال">📞</a><a class="btn small ok" href="${waLink(r.s.phone)}" target="_blank" rel="noopener" aria-label="واتساب">💬</a></span>` : ''}</div>`;
 
     body.innerHTML = `
       <div class="chips">${[['all', 'كل الطلاب'], ['girls', '👧 بنات'], ['boys', '👦 ولد']].map(([k, n]) => `<button class="chip ${grp === k ? 'on' : ''}" data-g="${k}">${n}</button>`).join('')}</div>
+      <div class="chips">${ORIGIN_FILTERS.map(([k, n]) => `<button class="chip ${org === k ? 'on' : ''}" data-o="${k}">${n}</button>`).join('')}</div>
       <div class="sum-grid">
         <div class="sum"><b>${all.length}</b><small>طالب</small></div>
         <div class="sum"><b>${all.length - never}</b><small>امتحنوا</small></div>
@@ -259,10 +278,12 @@ export function openMonthlyReport(month, subsIn) {
       ${flagged.length ? `<h3 class="section-title red-name">⚠ بحاجة للتواصل مع ولي الأمر (${flagged.length})</h3>${flagged.map((r) => line(r, true)).join('')}` : '<div class="card" style="text-align:center;margin-top:12px">🎉 لا يوجد طالب تحت النصف هذا الشهر</div>'}
       <h3 class="section-title">بقية الطلاب (${rest.length})</h3>${rest.map((r) => line(r, false)).join('')}`;
 
-    const table = (list) => `<table><thead><tr><th>#</th><th>اسم الطالب</th><th>المجموعة</th><th>الهاتف</th><th>النقاط</th><th>من</th><th>النسبة</th><th>امتحن</th><th>فاته</th><th>حسب المادة</th><th>الحالة</th></tr></thead><tbody>
-      ${list.map((r, i) => `<tr class="${r.st.needsFollowUp ? 'flag' : ''}"><td>${i + 1}</td><td class="${r.st.needsFollowUp ? 'red' : ''}">${esc(r.s.name)}</td><td>${groupLabel(r.s.gender)}</td><td dir="ltr">${esc(r.s.phone || '')}</td><td>${r.st.points}</td><td>${r.st.target}</td><td>${pct(r)}%</td><td>${r.st.taken}</td><td>${r.st.missed}</td><td>${perSub(r)}</td><td class="${r.st.needsFollowUp ? 'red' : ''}">${status(r)}</td></tr>`).join('')}</tbody></table>`;
-    const head = (t) => printHeader(t, `${monthName(month)} · ${grp === 'all' ? 'كل الطلاب' : groupLabel(grp)} · الهدف ${target} نقطة · ${all.length} طالب · امتحنوا ${all.length - never} · لم يمتحنوا ${never}`);
+    const table1 = (list, ext) => `<table><thead><tr><th>#</th><th>اسم الطالب</th>${ext ? '<th>المدرسة</th>' : ''}<th>المجموعة</th><th>الهاتف</th><th>النقاط</th><th>من</th><th>النسبة</th><th>امتحن</th><th>فاته</th><th>حسب المادة</th><th>الحالة</th></tr></thead><tbody>
+      ${list.map((r, i) => `<tr class="${r.st.needsFollowUp ? 'flag' : ''}"><td>${i + 1}</td><td class="${r.st.needsFollowUp ? 'red' : ''}">${esc(r.s.name)}</td>${ext ? `<td>${esc(r.s.school || '')}</td>` : ''}<td>${groupLabel(r.s.gender)}</td><td dir="ltr">${esc(r.s.phone || '')}</td><td>${r.st.points}</td><td>${r.st.target}</td><td>${pct(r)}%</td><td>${r.st.taken}</td><td>${r.st.missed}</td><td>${perSub(r)}</td><td class="${r.st.needsFollowUp ? 'red' : ''}">${status(r)}</td></tr>`).join('')}</tbody></table>`;
+    const table = (list) => byOrigin(list, table1);
+    const head = (t) => printHeader(t, `${monthName(month)} · ${org === 'all' ? '' : (org === 'external' ? 'خارج المعهد' : 'حضوري') + ' · '}${grp === 'all' ? 'كل الطلاب' : groupLabel(grp)} · الهدف ${target} نقطة · ${all.length} طالب · امتحنوا ${all.length - never} · لم يمتحنوا ${never}`);
     $$('.chip[data-g]', body).forEach((c) => (c.onclick = () => { grp = c.dataset.g; sfx.tap(); draw(body); }));
+    $$('.chip[data-o]', body).forEach((c) => (c.onclick = () => { org = c.dataset.o; sfx.tap(); draw(body); }));
     $('#pAll', body).onclick = () => printHTML(`${head('التقرير الشهري للطلاب')}${table([...flagged, ...rest])}${printFooter()}`);
     const pr = $('#pRed', body);
     if (pr) pr.onclick = () => printHTML(`${head('قائمة التواصل مع أولياء الأمور')}${table(flagged)}${printFooter()}`);
