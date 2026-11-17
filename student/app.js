@@ -15,6 +15,7 @@ import { alertUser, notifyCardHTML, bindNotifyCard, resumePush } from './notify.
 import { runExam } from './exam.js';
 import { showCard } from './card.js';
 import { showUpdateNotice, markUpdateSeen } from './updates.js';
+import { installCardHTML, bindInstallCard } from './install.js';
 import { pageHomework } from './homework.js';
 
 const S = { student: null, avatar: null, tab: 'profile', dots: {}, supDot: false, avCache: new Map(), timer: null, latest: { ann: null, sch: 0 } };
@@ -25,8 +26,6 @@ let tok = 0;
 /* ───────────── boot ───────────── */
 startGuard();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
-let installEvt = null;
-addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvt = e; });
 
 boot();
 async function boot() {
@@ -247,7 +246,6 @@ async function pageProfile(cur) {
   const pct = st.target ? Math.min(1, st.points / st.target) : 0;
   const C = 2 * Math.PI * 64;
   const active = subjects.filter((s) => s.active);
-  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 
   view.innerHTML = `
   <section class="hero">
@@ -291,9 +289,7 @@ async function pageProfile(cur) {
     <span class="end"><span class="dot inline" data-chat-dot="support" ${S.supDot ? '' : 'hidden'}></span></span></button>
 
   <div style="margin-top:16px" id="notifBox">${notifyCardHTML()}</div>
-  ${!standalone ? `<div class="card" style="margin-top:18px;text-align:center"><b>ثبّت التطبيق على هاتفك 📲</b>
-    <p class="muted" style="margin:6px 0 10px;font-size:14px">${installEvt ? 'اضغط الزر لإضافته إلى الشاشة الرئيسية.' : 'من متصفحك: القائمة ⋮ ← «إضافة إلى الشاشة الرئيسية» (في الآيفون: زر المشاركة ← إضافة إلى الشاشة الرئيسية).'}</p>
-    ${installEvt ? '<button class="btn small" id="installBtn">تثبيت</button>' : ''}</div>` : ''}
+  ${installCardHTML()}
 
   <div style="text-align:center;margin-top:22px"><button class="link-btn" id="aboutBtn">لمحة عن التطبيق</button></div>`;
 
@@ -309,7 +305,7 @@ async function pageProfile(cur) {
     } catch { toast('تعذّر رفع الصورة', 'bad'); }
   };
   $$('.chat-open').forEach((b) => (b.onclick = () => { sfx.tap(); openStudentChat(b.dataset.sid === 'institute' ? INSTITUTE : active.find((s) => s.id === b.dataset.sid)); }));
-  const ib = $('#installBtn'); if (ib) ib.onclick = async () => { installEvt.prompt(); installEvt = null; ib.remove(); };
+  bindInstallCard(view);
   $('#supBtn').onclick = () => { sfx.tap(); openSupport(); };
   $('#ttlBtn').onclick = () => { sfx.tap(); editTitle(); };
   $('#cardBtn').onclick = () => { sfx.tap(); showCard({
