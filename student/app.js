@@ -15,7 +15,7 @@ import { alertUser, notifyCardHTML, bindNotifyCard, resumePush } from './notify.
 import { runExam } from './exam.js';
 import { showCard } from './card.js';
 import { showUpdateNotice, markUpdateSeen } from './updates.js';
-import { birthdayCardHTML, bindBirthdayCard, celebrateBirthday } from './birthday.js';
+import { celebrateBirthday, birthText } from './birthday.js';
 import { openGroupChat, groupAvatar, unreadOf, findGroupByUsername, joinGroup, normUser, audIcon, loadTeacherScope } from './groups.js';
 import { installCardHTML, bindInstallCard } from './install.js';
 import { pageHomework } from './homework.js';
@@ -326,7 +326,6 @@ async function pageProfile(cur) {
   </section>
   ${overall != null ? `<div class="card" style="margin-top:14px"><div class="row" style="justify-content:space-between"><b>⭐ تقييمك من الإدارة</b><b style="font-size:24px;color:var(--gold-text)">${overall}/10</b></div>
     <div class="chips" style="flex-wrap:wrap;margin-top:8px">${rated.map((r) => `<span class="chip">${esc(subjName[r.subjectId] || '')} · ${r.score}/10</span>`).join('')}</div></div>` : ''}
-  ${birthdayCardHTML(S.student)}
   <button class="btn primary block" id="cardBtn" style="margin-top:14px">📸 حفظ بطاقتي (صورة لستوري)</button>
 
   <h3 class="section-title">💬 مراسلة الإدارة</h3>
@@ -367,7 +366,6 @@ async function pageProfile(cur) {
   };
   $$('.chat-open').forEach((b) => (b.onclick = () => { sfx.tap(); openStudentChat(b.dataset.sid === 'institute' ? INSTITUTE : active.find((s) => s.id === b.dataset.sid)); }));
   bindInstallCard(view);
-  bindBirthdayCard(S, () => go('profile', true));
   paintGroups();
   $('#joinGrp').onclick = () => { sfx.tap(); joinDialog(); };
   $('#supBtn').onclick = () => { sfx.tap(); openSupport(); };
@@ -651,7 +649,7 @@ function editTitle() {
   const s = S.student, locked = !!s.titleLocked && !!s.title;
   let emoji = s.emoji || '';
   const m = modal({
-    title: 'اللقب والإيموجي',
+    title: 'تعديل ملفي',
     body: `
       <div class="field"><span>اللقب (يظهر بجانب اسمك)</span>
         ${locked ? `<div class="card" style="padding:10px"><b>${esc(s.title)}</b><br><small class="muted">حُفظ لقبك ولا يمكن تعديله. إن أردت تغييره فتواصل مع الدعم من «ملفي».</small></div>`
@@ -661,16 +659,20 @@ function editTitle() {
         <div class="emoji-grid" id="eg">${EMOJIS.map((e) => `<button type="button" data-e="${e}" class="${e === emoji ? 'on' : ''}">${e}</button>`).join('')}</div>
         <div class="row"><input id="ei" maxlength="8" placeholder="أو اكتب إيموجي آخر" value="${esc(emoji)}" style="max-width:190px">
           <button type="button" class="link-btn" id="eclear">إزالة الإيموجي</button></div>
-        <small class="muted">إن لم يعجب الإدارة إيموجيك فقد تحذفه.</small></div>`,
+        <small class="muted">إن لم يعجب الإدارة إيموجيك فقد تحذفه.</small></div>
+      <div class="field"><span>🎂 تاريخ ميلادك (نهنئك بيومك بكيكة وشموع)</span>
+        <input type="date" id="bd" value="${esc(s.birthday || '')}" min="1960-01-01" max="${dkey().slice(0, 4) - 5}-12-31"></div>`,
     actions: [{ label: 'إلغاء', kind: 'ghost' }, { label: 'حفظ', kind: 'primary', sticky: true, onClick: async (api, btn) => {
       const typed = $('#ei', m.root).value.trim();
       const em = typed ? firstEmoji(typed) : '';
       if (typed && !em) { toast('اكتب إيموجي صحيحاً', 'bad'); return false; }
       const title = locked ? s.title : ($('#tt', m.root).value.trim().slice(0, 30));
       if (!locked && title && !(await confirmBox(`سيُحفظ لقبك «${esc(title)}» ولن تستطيع تعديله بعد ذلك. متأكد؟`, { ok: 'نعم، احفظ', cancel: 'رجوع' }))) return false;
+      const bd = $('#bd', m.root).value;
+      if (bd && (!/^\d{4}-\d{2}-\d{2}$/.test(bd) || +bd.slice(0, 4) < 1960 || +bd.slice(0, 4) > +dkey().slice(0, 4) - 5)) { toast('اكتب تاريخ ميلاد صحيحاً', 'bad'); return false; }
       btn.disabled = true;
       try {
-        const upd = { emoji: em, title, titleLocked: locked || !!title, emojiRemoved: em ? false : !!s.emojiRemoved };
+        const upd = { emoji: em, ...(bd ? { birthday: bd } : {}), title, titleLocked: locked || !!title, emojiRemoved: em ? false : !!s.emojiRemoved };
         await updateDoc(doc(db, 'students', s.id), upd);
         S.student = { ...s, ...upd }; sfx.pop(); toast('تم الحفظ ✨', 'ok'); go('profile', true);
       } catch { toast('تعذّر الحفظ', 'bad'); btn.disabled = false; return false; }

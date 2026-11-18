@@ -3,10 +3,11 @@
 
 import {
   db, collection, doc, getDocs, getDoc, updateDoc, deleteDoc, onSnapshot, query, where, writeBatch,
-  arrayUnion, arrayRemove, deleteField, nowMs, esc, $, $$, fullscreen, modal, confirmBox, toast, avatarHTML, pickFile, avatarFromFile,
+  arrayUnion, arrayRemove, deleteField, nowMs, dkey, mkey, monthName, esc, $, $$, fullscreen, modal, confirmBox, toast, avatarHTML, pickFile, avatarFromFile,
 } from './core.js';
 import { openChat } from './chat.js';
 import { sfx } from './fx.js';
+import { studentStats, tierOf, loadSubjects } from './stats.js';
 
 /*
  Groups (like Telegram groups):
@@ -115,19 +116,20 @@ export function openGroupInfo(g0, ctx) {
       ${mgr && leaves.length ? `<h3 class="section-title">🚪 طلبات المغادرة (${leaves.length})</h3>${leaves.map(([id, r]) => `<div class="mem-row"><span class="grow nm">${esc(r.name || g.members?.[id]?.name || '')}</span>
         <span class="btns"><button class="btn small ok" data-ok="${id}">موافقة</button><button class="btn small ghost" data-no="${id}">رفض</button></span></div>`).join('')}` : ''}
       <h3 class="section-title">👥 الأعضاء (${mem.length})</h3>
-      ${mgr ? '<button class="btn small primary" id="addM" style="margin-bottom:8px">➕ إضافة طلاب</button>' : ''}
-      ${mem.length ? mem.map((m) => `<div class="mem-row">${avatarHTML(ctx.avatarOf ? ctx.avatarOf(m.id) : null, m.name, 'sm')}
-        <span class="grow nm">${esc(m.name || '')}${(g.mutedIds || []).includes(m.id) ? ' <span class="badge mut">🔇 مكتوم</span>' : ''}${g.leaveReq?.[m.id] ? ' <span class="badge">🚪 طلب مغادرة</span>' : ''}</span>
+      <button class="btn small primary" id="addM" style="margin-bottom:8px">➕ إضافة طلاب</button>
+      ${mem.length ? mem.map((m) => `<div class="mem-row" data-card="${m.id}" style="cursor:pointer">${avatarHTML(ctx.avatarOf ? ctx.avatarOf(m.id) : null, m.name, 'sm')}
+        <span class="grow nm">${esc(m.name || '')}${(g.mutedIds || []).includes(m.id) ? ' <span class="badge mut">🔇 مكتوم</span>' : ''}${g.leaveReq?.[m.id] ? ' <span class="badge">🚪 طلب مغادرة</span>' : ''}${m.id === ctx.id ? ' <small class="muted">(أنت)</small>' : ''}</span>
         ${mgr ? `<span class="btns"><button class="btn small ghost" data-mu="${m.id}">${(g.mutedIds || []).includes(m.id) ? 'فك الكتم' : 'كتم'}</button><button class="btn small danger" data-kk="${m.id}">طرد</button></span>` : ''}</div>`).join('')
         : '<div class="empty-s">لا يوجد أعضاء بعد</div>'}
       ${mgr && kicked.length ? `<h3 class="section-title">🚫 المطرودون (${kicked.length})</h3>${kicked.map((id) => `<div class="mem-row"><span class="grow nm muted">${esc(g.members?.[id]?.name || id)}</span><button class="btn small" data-back="${id}">إعادة إضافة</button></div>`).join('')}` : ''}
       ${!mgr ? `<div style="margin-top:18px">${g.leaveReq?.[ctx.id] ? '<div class="card" style="text-align:center">⏳ طلب المغادرة بانتظار موافقة الأستاذ<br><button class="link-btn" id="cancelLv">إلغاء الطلب</button></div>'
         : '<button class="btn danger block" id="leaveBtn">🚪 طلب مغادرة المجموعة</button><p class="muted" style="font-size:13px;text-align:center">لا تخرج المجموعة إلا بعد موافقة الأستاذ.</p>'}</div>` : ''}
-      ${mgr ? '<div class="row wrap" style="margin-top:18px"><button class="btn small ghost" id="edG">✏️ تعديل الاسم والصورة</button><button class="btn small danger" id="delG">🗑️ حذف المجموعة</button></div>' : ''}`;
+      <div class="row wrap" style="margin-top:18px"><button class="btn small ghost" id="edG">✏️ تعديل الاسم والصورة</button>${mgr ? '<button class="btn small danger" id="delG">🗑️ حذف المجموعة</button>' : ''}</div>`;
 
     const $q = (s) => $(s, body);
     const cp = $q('#cpU'); if (cp) cp.onclick = async () => { try { await navigator.clipboard.writeText(g.username); toast('تم نسخ اليوزر ✓'); } catch { toast(g.username); } };
     const ma = $q('#mAll'); if (ma) ma.onchange = () => { upd({ muted: ma.checked }); sfx.tap(); };
+    $$('[data-card]', body).forEach((r) => (r.onclick = (e) => { if (e.target.closest('button')) return; sfx.tap(); openMemberCard(r.dataset.card, g.members?.[r.dataset.card]?.name || '', ctx.avatarOf ? ctx.avatarOf(r.dataset.card) : null); }));
     $$('[data-mu]', body).forEach((b) => (b.onclick = () => { sfx.tap(); upd({ mutedIds: (g.mutedIds || []).includes(b.dataset.mu) ? arrayRemove(b.dataset.mu) : arrayUnion(b.dataset.mu) }); }));
     $$('[data-kk]', body).forEach((b) => (b.onclick = async () => {
       const id = b.dataset.kk;
@@ -137,7 +139,7 @@ export function openGroupInfo(g0, ctx) {
     $$('[data-ok]', body).forEach((b) => (b.onclick = () => { const id = b.dataset.ok; upd({ memberIds: arrayRemove(id), ['members.' + id]: deleteField(), mutedIds: arrayRemove(id), ['leaveReq.' + id]: deleteField() }); sfx.pop(); }));
     $$('[data-no]', body).forEach((b) => (b.onclick = () => upd({ ['leaveReq.' + b.dataset.no]: deleteField() })));
     $$('[data-back]', body).forEach((b) => (b.onclick = () => { const id = b.dataset.back, nm = g.kickedNames?.[id] || ''; upd({ kickedIds: arrayRemove(id), memberIds: arrayUnion(id), ['members.' + id]: { name: nm, at: nowMs() } }); sfx.pop(); }));
-    const am = $q('#addM'); if (am) am.onclick = () => addStudentsDialog(g, upd);
+    const am = $q('#addM'); if (am) am.onclick = () => addStudentsDialog(g, upd, mgr);
     const lv = $q('#leaveBtn'); if (lv) lv.onclick = async () => {
       if (!(await confirmBox('إرسال طلب مغادرة للأستاذ؟ تبقى في المجموعة حتى يوافق.', { ok: 'إرسال الطلب' }))) return;
       await upd({ ['leaveReq.' + ctx.id]: { name: ctx.name, at: nowMs() } }); sfx.pop(); toast('أُرسل طلبك للأستاذ');
@@ -167,8 +169,8 @@ export async function deleteGroup(g) {
 }
 
 /* the owner picks students himself (same audience only) */
-async function addStudentsDialog(g, upd) {
-  const all = rowsOf(await getDocs(collection(db, 'students'))).filter((s) => s.gender === g.audience && !(g.memberIds || []).includes(s.id)).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+async function addStudentsDialog(g, upd, mgr = true) {
+  const all = rowsOf(await getDocs(collection(db, 'students'))).filter((s) => s.gender === g.audience && !(g.memberIds || []).includes(s.id) && (mgr || !(g.kickedIds || []).includes(s.id))).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
   const picked = new Set();
   const m = modal({
     title: `➕ إضافة طلاب (${audName(g.audience)})`, wide: true,
@@ -203,4 +205,40 @@ function editGroupDialog(g, upd) {
     } }],
   });
   $('#gpb', m.root).onclick = async () => { const f = await pickFile(); if (!f) return; try { img = await avatarFromFile(f); $('#gp', m.root).innerHTML = avatarHTML(img, g.name, 'big'); } catch { toast('تعذّرت قراءة الصورة', 'bad'); } };
+}
+
+/* a member's public card: photo, name, tier, points, commitment, ratings. No phone or private data. */
+export async function openMemberCard(id, fallbackName, avatar) {
+  const m = modal({ title: 'بطاقة الطالب', body: '<div class="empty-s">جارٍ التحميل…</div>', actions: [{ label: 'إغلاق', kind: 'ghost' }] });
+  try {
+    const month = mkey(dkey()), today = dkey();
+    const [sd, subjects, rs, eds, bns, rts, av] = await Promise.all([
+      getDoc(doc(db, 'students', id)), loadSubjects(),
+      getDocs(query(collection(db, 'results'), where('studentId', '==', id))),
+      getDocs(query(collection(db, 'examDays'), where('month', '==', month))),
+      getDocs(query(collection(db, 'bonuses'), where('studentId', '==', id))),
+      getDocs(query(collection(db, 'ratings'), where('studentId', '==', id))),
+      avatar ? Promise.resolve(null) : getDoc(doc(db, 'avatars', id)).catch(() => null),
+    ]);
+    const s = sd.exists() ? { id, ...sd.data() } : { id, name: fallbackName };
+    const pic = avatar || (av && av.exists && av.exists() ? (av.data().img || av.data().data || null) : null);
+    const list = (x) => x.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const st = studentStats(s, subjects, list(eds), list(rs), month, today, list(bns));
+    const tier = tierOf(st.points, st.target);
+    const rated = list(rts).filter((r) => typeof r.score === 'number');
+    const overall = rated.length ? Math.round((rated.reduce((a, r) => a + r.score, 0) / rated.length) * 10) / 10 : null;
+    const sn = Object.fromEntries(subjects.map((x) => [x.id, x.name]));
+    const rate = st.rate == null ? null : Math.round(Math.min(1, st.rate) * 100);
+    const html = `<div style="text-align:center">${avatarHTML(pic, s.name || fallbackName, 'big', s.emoji || '')}
+      <h2 style="margin:8px 0 2px">${s.title ? esc(s.title) + ' ' : ''}${esc(s.name || fallbackName)}</h2>
+      <span class="chip ${tier ? 'on' : ''}">${tier ? tier.icon + ' ' + tier.name : 'قيد الجمع 💪'}</span></div>
+      <div class="stats3" style="margin-top:12px">
+        <div class="stat"><b>${st.points}</b><small>من ${st.target || 0} نقطة</small></div>
+        <div class="stat"><b>${rate == null ? '—' : rate + '%'}</b><small>الاستمرارية</small></div>
+        <div class="stat"><b>${st.taken}</b><small>امتحن · فاته ${st.missed}</small></div></div>
+      <div class="muted" style="text-align:center;font-size:13px;margin-top:4px">نقاط شهر ${monthName(month)}</div>
+      ${overall != null ? `<div class="card" style="margin-top:12px"><div class="row" style="justify-content:space-between"><b>⭐ التقييم</b><b style="font-size:22px;color:var(--gold-text)">${overall}/10</b></div>
+        <div class="chips" style="flex-wrap:wrap;margin-top:8px">${rated.map((r) => `<span class="chip">${esc(sn[r.subjectId] || '')} · ${r.score}/10</span>`).join('')}</div></div>` : '<div class="muted" style="text-align:center;margin-top:12px">لا يوجد تقييم بعد</div>'}`;
+    const host = m.root.querySelector('.empty-s'); if (host) host.parentElement.innerHTML = html;
+  } catch { const h = m.root.querySelector('.empty-s'); if (h) h.textContent = 'تعذّر تحميل البطاقة'; }
 }
