@@ -107,10 +107,52 @@ export function normAr(s) {
     .replace(/\s+/g, ' ').trim();
 }
 export const squash = (s) => normAr(s).replace(/\s/g, '');
+/* ── lenient answer matching: same meaning, different wording (ال، ها، تساوي، لا≈غير، الأرقام بالحروف، أخطاء إملائية بسيطة) ── */
+const FILLER = new Set(['تساوي', 'يساوي', 'تكون', 'يكون', 'هو', 'هي', 'هما', 'هم', 'في', 'من', 'الي', 'على', 'ان', 'انه', 'انها', 'هذا', 'هذه', 'ذلك', 'عن', 'مع', 'قيمه', 'قيمتها', 'قيمته', 'تعني', 'يعني', 'تسمي', 'يسمي', 'تسمى', 'يسمى', 'وهي', 'وهو']);
+const NUMW = { صفر: '0', واحد: '1', واحده: '1', اثنان: '2', اثنين: '2', اثنتان: '2', ثلاثه: '3', ثلاث: '3', اربعه: '4', اربع: '4', خمسه: '5', خمس: '5', سته: '6', ست: '6', سبعه: '7', سبع: '7', ثمانيه: '8', ثماني: '8', تسعه: '9', تسع: '9', عشره: '10', عشر: '10' };
+const SUFFIX = ['ها', 'هم', 'هن', 'ات', 'ون', 'ين', 'ان', 'ه', 'ا'];
+function stemTok(w) {
+  if (NUMW[w]) return NUMW[w];
+  let x = w;
+  for (let i = 0; i < 2 && x.startsWith('ال') && x.length > 4; i++) x = x.slice(2);
+  if (x.length > 3 && x.startsWith('و') && !NUMW[x]) x = x.slice(1);
+  for (const s of SUFFIX) if (x.length - s.length >= 3 && x.endsWith(s)) { x = x.slice(0, -s.length); break; }
+  return NUMW[x] || x;
+}
+function toks(s) {
+  const out = [];
+  for (let w of normAr(s).replace(/[.،,؛:!؟?"'()]/g, ' ').split(' ').filter(Boolean)) {
+    w = w.replace(/[\u064B-\u0652]/g, '');
+    if (w === 'لا' || w === 'ليس' || w === 'ليست' || w === 'بدون') { out.push('غير'); continue; }
+    const m = w.match(/^(?:ال)?لا(ال.{3,})$/); if (m) { out.push('غير', stemTok(m[1])); continue; }
+    if (FILLER.has(w)) continue;
+    out.push(stemTok(w));
+  }
+  return out;
+}
+const lev1 = (a, b) => {
+  if (a === b) return true; if (Math.abs(a.length - b.length) > 1 || Math.min(a.length, b.length) < 5) return false;
+  let i = 0; while (i < a.length && a[i] === b[i]) i++;
+  return a.slice(i + 1) === b.slice(i + 1) || a.slice(i + 1) === b.slice(i) || a.slice(i) === b.slice(i + 1);
+};
 export function sameAnswer(input, accepted) {
   const a = squash(input);
   if (!a) return false;
-  return (accepted || []).some((x) => squash(x) === a);
+  const list = (accepted || []).filter((x) => String(x || '').trim());
+  if (list.some((x) => squash(x) === a)) return true;
+  const A = toks(input); if (!A.length) return false;
+  const neg = (T) => T.filter((w) => w === 'غير').length;
+  return list.some((x) => {
+    const B = toks(x); if (!B.length) return false;
+    if (neg(A) > neg(B)) return false;                      // he added a "not" the answer does not have → opposite meaning
+    const has = (T, w) => T.some((y) => lev1(y, w));
+    const common = A.filter((w) => has(B, w)).length, commonB = B.filter((w) => has(A, w)).length;
+    if (!common) return false;
+    if (common === A.length && commonB === B.length) return true;                       // same words
+    if (commonB === B.length && A.length <= B.length + 3) return true;                  // he said it all, plus extra
+    if (common === A.length && B.length - commonB <= 2) return true;                    // he gave the key words, a few words missing
+    return (2 * Math.min(common, commonB)) / (A.length + B.length) >= 0.66;             // most words in common
+  });
 }
 export function cleanPhone(p) {
   return String(p || '').replace(/[٠-٩]/g, (d) => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/\D/g, '');
