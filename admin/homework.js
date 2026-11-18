@@ -7,7 +7,8 @@ import {
   pickFiles, homeworkImage, avatarHTML, inAudience, hwDue, hwClosed, dayStartMs, fmtMin, groupLabel,
 } from './core.js';
 import { sfx } from './fx.js';
-import { S, mySubjects, subjectById, rows, loadAllAvatars, printHTML, printHeader, printFooter } from './state.js';
+import { S, mySubjects, subjectById, rows, loadAllAvatars, printHTML, printHeader, printFooter, effectiveTeacher, canSeeWork, adminName } from './state.js';
+import { teacherStudentIds } from './groups.js';
 import { subPage } from './manage.js';
 import { isExpired, deleteHomework } from './homework-clean.js';
 
@@ -54,7 +55,7 @@ export function openHomework() {
       getDocs(query(collection(db, 'homeworks'), where('subjectId', '==', sid))),
       getDocs(query(collection(db, 'submissions'), where('subjectId', '==', sid))),
     ]);
-    const hws = rows(hwSnap).sort((a, b) => b.createdAt - a.createdAt);
+    const hws = rows(hwSnap).filter(canSeeWork).sort((a, b) => b.createdAt - a.createdAt);
     const all = rows(subSnap);
 
     body.innerHTML = `
@@ -63,7 +64,7 @@ export function openHomework() {
       ${hws.length ? hws.map((h) => {
         const mine = all.filter((x) => x.homeworkId === h.id), pend = mine.filter((x) => x.status === 'submitted').length;
         return `<button class="list-item hw" data-id="${h.id}"><span class="grow"><span class="t">${esc(h.title)}</span>
-          <small>${audLabel(h)} · ${dueText(h)} · ${mine.length} تسليم</small>${isExpired(h) ? '<small>⌛ منتهٍ ومخفي عن الطلاب (محفوظ عندك)</small>' : ''}</span>
+          <small>${audLabel(h)} · ${dueText(h)} · ${mine.length} تسليم${h.teacherName ? ' · الأستاذ ' + esc(h.teacherName) : ''}</small>${isExpired(h) ? '<small>⌛ منتهٍ ومخفي عن الطلاب (محفوظ عندك)</small>' : ''}</span>
           ${pend ? `<span class="badge warn">${pend} بانتظار التصحيح</span>` : (mine.length ? '<span class="badge ok">تم تصحيحها</span>' : '')}</button>`;
       }).join('') : '<div class="empty"><span class="big">📭</span>لا توجد واجبات لهذه المادة بعد.</div>'}
       <p class="muted" style="font-size:12px;margin-top:14px">ملاحظة: الواجبات لا تُحذف تلقائياً أبداً وتبقى عندك. عند انتهاء العمل بواجب يمكنك حذف صور التسليمات منه (تبقى الدرجات والملاحظات) أو حذفه بالكامل.</p>
@@ -82,6 +83,7 @@ export function openHomework() {
 
 /* create (hw = null) or edit a homework: text, audience, deadline (date + hour), late policy and the question photos */
 async function homeworkDialog(subjectId, hw, done) {
+  const myT = effectiveTeacher(), tIds = hw ? null : await teacherStudentIds(myT).catch(() => null);
   const loaded = hw ? await loadHwImages(hw) : [];
   let imgs = loaded.slice();
   let imgsChanged = !!(hw && hw.img);                         // an old single-image homework must be rewritten into the new format
@@ -94,6 +96,8 @@ async function homeworkDialog(subjectId, hw, done) {
     title: hw ? '✏️ تعديل الواجب' : '📝 واجب جديد', wide: true,
     body: `<label class="field"><span>العنوان</span><input id="ht" value="${esc(hw?.title || '')}" placeholder="مثال: حل أسئلة الفصل الثاني"></label>
       <label class="field"><span>التفاصيل (اختياري)</span><textarea id="hd">${esc(hw?.desc || '')}</textarea></label>
+      ${hw ? (hw.teacherName ? `<p class="muted" style="font-size:13px;margin:0 0 10px">👨‍🏫 منشور باسم الأستاذ ${esc(hw.teacherName)}، ويصل لطلابه فقط.</p>` : '') : myT
+        ? `<p class="muted" style="font-size:13px;margin:0 0 10px">👨‍🏫 سيُنشر باسم <b>${esc(adminName(myT))}</b> ${tIds ? `ويصل لطلاب مجموعاتك فقط (${tIds.size} طالب).` : 'وبما أنك لم تنشئ مجموعة بعد فسيصل لجميع طلاب المادة. أنشئ مجموعة ليختص بطلابك.'}</p>` : ''}
       <div class="field"><span>لمن هذا الواجب؟</span><div class="seg" id="hAud" style="margin:0"><button type="button" data-a="boys" class="${aud0 === 'boys' ? 'on' : ''}">👦 ولد</button><button type="button" data-a="girls" class="${aud0 === 'girls' ? 'on' : ''}">👧 بنات</button><button type="button" data-a="all" class="${aud0 === 'all' ? 'on' : ''}">👥 الاثنان</button></div></div>
       <div class="card" style="padding:12px;margin-bottom:14px">
         <label class="row" style="margin-bottom:8px"><input type="checkbox" id="hNo" ${noDue0 ? 'checked' : ''} style="width:22px;height:22px;accent-color:#2b3244"><span>بدون موعد نهائي (يبقى مفتوحاً)</span></label>
@@ -120,7 +124,7 @@ async function homeworkDialog(subjectId, hw, done) {
       try {
         let id;
         if (hw) { id = hw.id; await updateDoc(doc(db, 'homeworks', id), { ...fields, img: null, updatedAt: nowMs(), updatedBy: S.admin.username }); }
-        else { const ref = await addDoc(collection(db, 'homeworks'), { subjectId, ...fields, createdAt: nowMs(), createdBy: S.admin.username }); id = ref.id; imgsChanged = true; }
+        else { const ref = await addDoc(collection(db, 'homeworks'), { subjectId, ...fields, teacher: myT || null, teacherName: myT ? adminName(myT) : null, createdAt: nowMs(), createdBy: S.admin.username }); id = ref.id; imgsChanged = true; }
         if (imgsChanged) {
           const old = await getDocs(collection(db, 'homeworks', id, 'pages'));
           for (let i = 0; i < old.docs.length; i += 400) { const b = writeBatch(db); old.docs.slice(i, i + 400).forEach((d) => b.delete(d.ref)); await b.commit(); }
@@ -161,7 +165,8 @@ function detail(hw, onChange) {
     const allSt = rows(stSnap), genderOf = (id) => allSt.find((x) => x.id === id)?.gender;
     const subsAll = rows(subSnap).sort((a, b) => b.submittedAt - a.submittedAt);
     const subs = subsAll.filter((s) => gf === 'all' || genderOf(s.studentId) === gf);
-    const students = allSt.filter((s) => inAudience(hw, s.gender) && (gf === 'all' || s.gender === gf));
+    const myIds = await teacherStudentIds(hw.teacher).catch(() => null);        // only this teacher's students (null = everybody)
+    const students = allSt.filter((s) => inAudience(hw, s.gender) && (!myIds || myIds.has(s.id)) && (gf === 'all' || s.gender === gf));
     const cnt = (g) => subsAll.filter((s) => genderOf(s.studentId) === g).length;
     const showB = hw.audience !== 'girls', showG = hw.audience !== 'boys';
     const handed = new Set(subs.map((s) => s.studentId));

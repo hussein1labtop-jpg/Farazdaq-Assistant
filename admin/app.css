@@ -391,3 +391,16 @@ html[data-theme="light"] .red-name { color: #c0261a !important; }
 .emoji-grid button.on { box-shadow: 0 0 0 3px var(--gold); }
 .rate-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
 .rate-row input { width: 84px; text-align: center; }
+
+/* groups + stickers */
+.stk-cell { position: relative; }
+.stk-cell .stk-tag { position: absolute; top: 2px; inset-inline-start: 2px; font-size: 11px; }
+.stk-cell.locked img { filter: grayscale(.8) brightness(.7); }
+.stk-cell .stk-lock { position: absolute; inset: 0; display: grid; place-items: center; font-size: 24px; }
+.chat-input.locked { opacity: .55; }
+.grp-av { width: 46px; height: 46px; border-radius: 14px; object-fit: cover; flex: none; }
+.mem-row { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line, rgba(128,128,128,.18)); }
+.mem-row .grow { min-width: 0; }
+.mem-row .nm { font-weight: 600; word-break: break-word; }
+.mem-row .btns { display: flex; gap: 6px; flex-wrap: wrap; }
+.badge.mut { background: rgba(255, 138, 115, .2); color: var(--bad); }

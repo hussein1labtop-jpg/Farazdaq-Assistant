@@ -34,3 +34,11 @@ export function printHTML(html) {
 }
 export const printHeader = (title, sub) => `<div class="ph"><img src="logo.png" alt=""><div><h1>معهد الفرزدق – ${esc(title)}</h1><div>${esc(sub || '')}</div></div></div>`;
 export const printFooter = () => `<div class="ft">أُنشئ بواسطة تطبيق «مساعد الفرزدق»</div>`;
+
+/* the teacher a piece of work is published "as": a teacher himself, or the teacher an assistant belongs to (null = everybody) */
+export const effectiveTeacher = () => (S.admin.role === 'assistant' ? (S.admin.teacherOf || null) : S.admin.role === 'teacher' ? S.admin.username : null);
+export const adminName = (u) => S.admins.find((a) => a.username === u)?.name || '';
+/* groups: only the owner, his assistants and the developer see/manage them (they never appear in other staff's lists) */
+export const isGroupManager = (g) => isSuper() || g.ownerUsername === S.admin.username || (!!S.admin.teacherOf && g.ownerUsername === S.admin.teacherOf);
+export const canMakeGroups = () => isSuper() || S.admin.role === 'teacher' || (S.admin.role === 'assistant' && !!S.admin.teacherOf);
+export const canSeeWork = (x) => isAll() || !x.teacher || x.teacher === S.admin.username || x.teacher === effectiveTeacher();

@@ -155,9 +155,10 @@ export async function openStudentDetail(student, ctx) {
   });
 
   $('#msg', m.root).onclick = () => {
-    const allowed = mySubjects();
+    const allowed = mySubjects().map((x) => ({ id: x.id, label: `${esc(x.emoji || '')} ${esc(x.name)}` }));
+    if (S.admin.role === 'institute' || S.admin.role === 'super') allowed.push({ id: 'institute', label: '🏛️ إدارة المعهد' });   // answer as the institute administration
     if (allowed.length === 1) { m.close(); return openStudentChat({ studentId: student.id, subjectId: allowed[0].id, studentName: student.name }); }
-    const pick = modal({ title: 'اختر المادة', body: `<div class="stack">${allowed.map((x) => `<button class="list-item" data-p="${x.id}">${esc(x.emoji || '')} ${esc(x.name)}</button>`).join('')}</div>` });
+    const pick = modal({ title: 'مراسلة بصفة…', body: `<div class="stack">${allowed.map((x) => `<button class="list-item" data-p="${x.id}">${x.label}</button>`).join('')}</div>` });
     $$('[data-p]', pick.root).forEach((b) => (b.onclick = () => { pick.close(); m.close(); openStudentChat({ studentId: student.id, subjectId: b.dataset.p, studentName: student.name }); }));
   };
   const reopen = () => { delete cache[month]; m.close(); openStudentDetail(student, { month, subs }); };

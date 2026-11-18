@@ -8,7 +8,7 @@ import {
 } from './core.js';
 import { SUPER_USERNAME } from './signature.js';
 import { sfx } from './fx.js';
-import { S, ROLES, refreshSubjects, refreshAdmins, loadAllAvatars, rows, subjectById } from './state.js';
+import { S, ROLES, refreshSubjects, refreshAdmins, loadAllAvatars, rows, subjectById, isAll, effectiveTeacher, canSeeWork, adminName } from './state.js';
 import { showPoster } from './poster.js';
 import { TIERS, getBoard, saveBoard, computeBoard, loadMonthData, lastMonth } from './stats.js';
 
@@ -29,17 +29,19 @@ const CHANNELS = {
 };
 export const CHANNEL_LIST = ['girls', 'boys', 'all'].map((k) => ({ key: k, ...CHANNELS[k] }));
 
-export function openChannel(audience) {
-  const ch = CHANNELS[audience];
-  let postImg = null, unsub = null;
+export function openChannel(audience, opts = {}) {
+  const subject = opts.subject || null;                       // a subject's own announcements (published by its teachers)
+  const ch = subject ? { icon: subject.emoji || '📣', title: 'تبليغات ' + subject.name, hint: 'تبليغات خاصة بمادة ' + subject.name + ' (تصل لطلاب أستاذها)' } : CHANNELS[audience];
+  let postImg = null, unsub = null, postAud = 'all';
   const ov = fullscreen(`<div class="chat">
     <header class="chat-head"><button class="icon-btn back" aria-label="رجوع">➜</button>
       <div class="chat-who"><span class="av" style="background:var(--surface2)">${ch.icon}</span><div><b>${ch.title}</b><small>${ch.hint}</small></div></div></header>
-    ${audience === 'all' ? '' : '<div class="chat-extra" id="schBox"></div>'}
+    ${audience === 'all' || subject ? '' : '<div class="chat-extra" id="schBox"></div>'}
     <div class="chat-list" id="feed"><div class="empty-s">جارٍ التحميل…</div></div>
+    ${subject ? '<div class="chips" id="pAud" style="padding:6px 10px 0"><button class="chip on" data-a="all">👥 الكل</button><button class="chip" data-a="boys">👦 ولد</button><button class="chip" data-a="girls">👧 بنات</button></div>' : ''}
     <div id="prevBox" style="padding:0 10px"></div>
     <footer class="chat-input"><button class="icon-btn" id="attach" aria-label="إرفاق صورة">🖼️</button>
-      <textarea id="ptxt" rows="1" placeholder="اكتب تبليغاً لـ${ch.title.replace('تبليغات ', '')}…"></textarea>
+      <textarea id="ptxt" rows="1" placeholder="${subject ? 'اكتب تبليغاً لطلاب ' + esc(subject.name) + '…' : 'اكتب تبليغاً لـ' + ch.title.replace('تبليغات ', '') + '…'}"></textarea>
       <button class="send-btn" id="psend" aria-label="نشر">➤</button></footer></div>`, 'chat-ov');
   const feed = $('#feed', ov), txt = $('#ptxt', ov);
   const close = ov.close; ov.close = () => { unsub && unsub(); close(); };
@@ -48,10 +50,11 @@ export function openChannel(audience) {
 
   /* the live feed of this channel (older posts without a group count as "common") */
   unsub = onSnapshot(query(collection(db, 'announcements'), orderBy('at', 'desc'), limit(100)), (snap) => {
-    const list = rows(snap).filter((p) => (p.audience || 'all') === audience).reverse();
+    const list = rows(snap).filter((p) => (subject ? p.subjectId === subject.id && canSeeWork(p) : !p.subjectId && (p.audience || 'all') === audience)).reverse();
+    const audTag = (p) => (subject ? ` · ${p.audience === 'boys' ? '👦 ولد' : p.audience === 'girls' ? '👧 بنات' : '👥 الكل'}${p.teacherName ? ' · الأستاذ ' + esc(p.teacherName) : ''}` : '');
     feed.innerHTML = list.length ? list.map((p) => `<article class="post" style="max-width:92%">
         ${p.text ? `<p>${esc(p.text)}</p>` : ''}${p.img ? `<img src="${p.img}" alt="" data-z="1">` : ''}
-        <div class="row" style="justify-content:space-between;margin-top:6px"><time>${dayLabel(dkey(p.at))} · ${esc(p.by || '')}</time><button class="link-btn" data-del="${p.id}" style="color:var(--bad)">حذف 🗑️</button></div></article>`).join('')
+        <div class="row" style="justify-content:space-between;margin-top:6px"><time>${dayLabel(dkey(p.at))} · ${esc(p.by || '')}${audTag(p)}</time><button class="link-btn" data-del="${p.id}" style="color:var(--bad)">حذف 🗑️</button></div></article>`).join('')
       : '<div class="empty-s">لا توجد تبليغات بعد. اكتب أول تبليغ بالأسفل 👇</div>';
     feed.scrollTop = feed.scrollHeight;
     $$('[data-del]', feed).forEach((b) => (b.onclick = async () => { if (await confirmBox('حذف هذا التبليغ؟', { danger: true, ok: 'حذف' })) await deleteDoc(doc(db, 'announcements', b.dataset.del)); }));
@@ -67,13 +70,17 @@ export function openChannel(audience) {
     const text = txt.value.trim();
     if (!text && !postImg) return toast('اكتب نصاً أو أرفق صورة', 'bad');
     try {
-      await addDoc(collection(db, 'announcements'), { text, img: postImg || null, audience, at: nowMs(), by: S.admin.name });
+      const t = subject ? effectiveTeacher() : null;
+      await addDoc(collection(db, 'announcements'), { text, img: postImg || null, audience: subject ? postAud : audience, at: nowMs(), by: S.admin.name, byUser: S.admin.username,
+        ...(subject ? { subjectId: subject.id, teacher: t, teacherName: t ? adminName(t) : null } : {}) });
       txt.value = ''; txt.style.height = ''; postImg = null; $('#prevBox', ov).innerHTML = ''; sfx.send();
     } catch { toast('تعذّر النشر', 'bad'); }
   };
 
+  $$('#pAud .chip', ov).forEach((c) => (c.onclick = () => { postAud = c.dataset.a; sfx.tap(); $$('#pAud .chip', ov).forEach((x) => x.classList.toggle('on', x === c)); }));
+
   /* the weekly schedule pinned for this group */
-  if (audience !== 'all') {
+  if (audience !== 'all' && !subject) {
     const box = $('#schBox', ov);
     (async function drawSch() {
       const s = await getDoc(doc(db, 'settings', 'schedule_' + audience));
@@ -164,20 +171,21 @@ export function openUsers() {
     body.innerHTML = `<div class="card" style="margin-bottom:12px"><p class="muted" style="margin:0;font-size:14px">⚠ اسم المستخدم هو مفتاح الدخول الوحيد (بدون كلمة سر). اجعله طويلاً وغير متوقع ولا تعطه إلا لصاحبه. لحذف صلاحية أحد احذف حسابه وسيُخرَج عند فتح التطبيق.</p></div>
       <button class="btn primary block" id="addU" style="margin-bottom:14px">+ إضافة حساب جديد</button>
       ${list.map((a) => `<button class="list-item" data-u="${a.username}">${avatarHTML(a.photo, a.name)}<span class="t">${esc(a.name)}<small dir="ltr" style="text-align:start">${esc(a.username)}</small></span>
-        <span class="end"><span class="badge">${ROLES[a.role] || ''}${a.fullAccess ? ' 🔑' : ''}</span><br><small>${a.role === 'teacher' || a.role === 'assistant' ? esc((a.subjectIds || []).map((id) => subjectById(id)?.name).filter(Boolean).join('، ')) : ''}</small></span></button>`).join('')}`;
+        <span class="end"><span class="badge">${ROLES[a.role] || ''}${a.fullAccess ? ' 🔑' : ''}${a.role === 'assistant' && a.teacherOf ? ' ← ' + esc(S.admins.find((x) => x.username === a.teacherOf)?.name || '') : ''}</span><br><small>${a.role === 'teacher' || a.role === 'assistant' ? esc((a.subjectIds || []).map((id) => subjectById(id)?.name).filter(Boolean).join('، ')) : ''}</small></span></button>`).join('')}`;
     $('#addU', body).onclick = () => userEditor(null, () => draw(body));
     $$('[data-u]', body).forEach((b) => (b.onclick = () => userEditor(S.admins.find((x) => x.username === b.dataset.u), () => draw(body))));
   });
 }
 function userEditor(a, done) {
   const isNew = !a, isSup = a && a.username === SUPER_USERNAME;
-  const data = a ? { ...a } : { username: '', name: '', role: 'teacher', subjectIds: [], fullAccess: false };
+  const data = a ? { ...a } : { username: '', name: '', role: 'teacher', subjectIds: [], fullAccess: false, teacherOf: null };
   const m = modal({ title: isNew ? 'حساب جديد' : 'تعديل الحساب', wide: true, body: `
     <label class="field"><span>اسم المستخدم (إنكليزي) ${isNew ? '' : '— لا يمكن تغييره'}</span>
       <div class="row"><input id="uu" dir="ltr" value="${esc(data.username)}" ${isNew ? '' : 'disabled'} autocapitalize="off">${isNew ? '<button class="btn small" id="gen" type="button">توليد</button>' : ''}</div></label>
     <label class="field"><span>الاسم الظاهر</span><input id="un" value="${esc(data.name)}" placeholder="مثال: الأستاذ علي"></label>
     ${isSup ? '' : `<label class="field"><span>الصلاحية</span><select id="ur"><option value="teacher" ${data.role === 'teacher' ? 'selected' : ''}>مدرّس (مادة محددة)</option><option value="assistant" ${data.role === 'assistant' ? 'selected' : ''}>مساعد (مادة محددة)</option><option value="institute" ${data.role === 'institute' ? 'selected' : ''}>إدارة المعهد (كل المواد + طباعة)</option></select></label>
     <div class="field" id="subWrap"><span>المواد</span><div class="chips" style="flex-wrap:wrap">${S.subjects.map((s) => `<button type="button" class="chip ${data.subjectIds.includes(s.id) ? 'on' : ''}" data-sid="${s.id}">${esc(s.emoji || '')} ${esc(s.name)}</button>`).join('') || '<small class="muted">أضف مواد أولاً</small>'}</div></div>
+    <label class="field" id="toWrap" hidden><span>المساعد تابع للأستاذ (واجباته وتبليغاته تُنشر باسم هذا الأستاذ)</span><select id="uto"><option value="">— بدون —</option>${S.admins.filter((x) => x.role === 'teacher').map((x) => `<option value="${esc(x.username)}" ${data.teacherOf === x.username ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
     <label class="row" id="faWrap" style="align-items:flex-start;margin-top:4px"><input type="checkbox" id="fa" ${data.fullAccess ? 'checked' : ''} style="width:24px;height:24px;accent-color:#2b3244;flex:none;margin-top:3px">
       <span><b>🔑 صلاحيات الإدارة الكاملة</b><br><small class="muted">يحصل على نفس صلاحيات حساب إدارة المعهد: يرى كل المواد والطلاب والمحادثات والنتائج ويطبع التقارير. يبقى اسمه ودوره ومادته كما هي ظاهرة.</small></span></label>`}`,
     actions: [
@@ -189,13 +197,14 @@ function userEditor(a, done) {
         if (name.length < 2) { toast('اكتب الاسم', 'bad'); return false; }
         const role = isSup ? 'super' : $('#ur', m.root).value;
         const fullAccess = !isSup && role !== 'institute' && $('#fa', m.root).checked;
+        const teacherOf = role === 'assistant' ? ($('#uto', m.root).value || null) : null;
         const subjectIds = isSup ? [] : $$('#subWrap .chip.on', m.root).map((c) => c.dataset.sid);
         if ((role === 'teacher' || role === 'assistant') && !subjectIds.length) { toast('اختر مادة واحدة على الأقل', 'bad'); return false; }
         try {
           if (isNew) {
             if ((await getDoc(doc(db, 'admins', username))).exists()) { toast('اسم المستخدم مستخدم مسبقاً', 'bad'); return false; }
-            await setDoc(doc(db, 'admins', username), { username, name, role, subjectIds, fullAccess, createdAt: nowMs() });
-          } else await updateDoc(doc(db, 'admins', username), { name, role, subjectIds, fullAccess });
+            await setDoc(doc(db, 'admins', username), { username, name, role, subjectIds, fullAccess, teacherOf, createdAt: nowMs() });
+          } else await updateDoc(doc(db, 'admins', username), { name, role, subjectIds, fullAccess, teacherOf });
           sfx.pop(); toast('تم الحفظ ✓', 'ok'); done();
         } catch { toast('تعذّر الحفظ', 'bad'); return false; }
       } },
@@ -203,7 +212,7 @@ function userEditor(a, done) {
   const g = $('#gen', m.root); if (g) g.onclick = () => { $('#uu', m.root).value = genUsername(); };
   $$('#subWrap .chip', m.root).forEach((c) => (c.onclick = () => c.classList.toggle('on')));
   const r = $('#ur', m.root), w = $('#subWrap', m.root);
-  if (r) { const fa = $('#faWrap', m.root); const sync = () => { w.hidden = r.value === 'institute'; fa.hidden = r.value === 'institute'; }; r.onchange = sync; sync(); }
+  if (r) { const fa = $('#faWrap', m.root), tw = $('#toWrap', m.root); const sync = () => { w.hidden = r.value === 'institute'; fa.hidden = r.value === 'institute'; tw.hidden = r.value !== 'assistant'; }; r.onchange = sync; sync(); }
 }
 
 /* ═════════════ subjects (developer only) ═════════════ */
