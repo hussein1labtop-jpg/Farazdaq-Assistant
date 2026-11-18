@@ -45,5 +45,7 @@ service cloud.firestore {
     match /homeworks/{d=**}       { allow read, write: if signedIn(); }
     match /submissions/{d=**}     { allow read, write: if signedIn(); }
     match /pushTokens/{d=**}      { allow read, write: if signedIn(); }
+    match /groups/{d=**}          { allow read, write: if signedIn(); }
+    match /stickerRequests/{d=**} { allow read, write: if signedIn(); }
   }
 }
