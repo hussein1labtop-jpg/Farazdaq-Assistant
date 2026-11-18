@@ -16,10 +16,11 @@ import { runExam } from './exam.js';
 import { showCard } from './card.js';
 import { showUpdateNotice, markUpdateSeen } from './updates.js';
 import { birthdayCardHTML, bindBirthdayCard, celebrateBirthday } from './birthday.js';
+import { openGroupChat, groupAvatar, unreadOf, findGroupByUsername, joinGroup, normUser, audIcon, loadTeacherScope } from './groups.js';
 import { installCardHTML, bindInstallCard } from './install.js';
 import { pageHomework } from './homework.js';
 
-const S = { student: null, avatar: null, tab: 'profile', dots: {}, supDot: false, avCache: new Map(), timer: null, latest: { ann: null, sch: 0 } };
+const S = { student: null, avatar: null, tab: 'profile', dots: {}, supDot: false, groups: [], scope: { sees: () => true }, avCache: new Map(), timer: null, latest: { ann: null, sch: 0 } };
 let subjName = {};
 const view = $('#view');
 let tok = 0;
@@ -128,6 +129,7 @@ async function enter() {
   $$('#nav button').forEach((b) => (b.onclick = () => go(b.dataset.tab)));
   getDoc(doc(db, 'avatars', S.student.id)).then((s) => { if (s.exists()) { S.avatar = s.data().img; if (S.tab === 'profile') go('profile', true); } }).catch(() => {});
   watchChats();
+  watchGroups();
   watchGifts();
   startAlerts();
   setTimeout(() => showUpdateNotice('student'), 900);
@@ -174,8 +176,54 @@ function watchChats() {
     firstSup = false; paintDots();
   }, () => {});
 }
+/* ───────────── groups ───────────── */
+let firstGrp = true, grpLast = {}, grpSig = null;
+function watchGroups() {
+  onSnapshot(query(collection(db, 'groups'), where('memberIds', 'array-contains', S.student.id)), (snap) => {
+    S.groups = rows(snap).sort((a, b) => (b.lastMsgAt || 0) - (a.lastMsgAt || 0));
+    if (!firstGrp && !$('.chat-ov')) {
+      S.groups.forEach((g) => {
+        if (g.lastMsgAt > (grpLast[g.id] || 0) && g.lastBy !== S.student.id && unreadOf(g, S.student.id)) alertUser('👥 ' + g.name, `${g.lastByName || ''}: ${g.lastMsg || 'رسالة جديدة'}`, { tag: 'grp-' + g.id });
+      });
+    }
+    S.groups.forEach((g) => { grpLast[g.id] = g.lastMsgAt || 0; });
+    const sig = S.groups.map((g) => g.id).sort().join(',');
+    if (sig !== grpSig) { grpSig = sig; loadTeacherScope(S.student.id).then((sc) => { S.scope = sc; }).catch(() => {}); }
+    firstGrp = false; paintGroups(); paintDots();
+  }, () => {});
+}
+function openGroup(g) {
+  openGroupChat(g, { side: 'student', id: S.student.id, name: S.student.name, manager: false });
+}
+function paintGroups() {
+  const box = $('#grpBox'); if (!box) return;
+  box.innerHTML = S.groups.length ? S.groups.map((g) => `<button class="list-item grp-it" data-id="${g.id}">${groupAvatar(g)}
+    <span class="t">${esc(g.name)}<small>${g.lastMsg ? esc((g.lastByName ? g.lastByName + ': ' : '') + g.lastMsg) : `${audIcon(g.audience)} ${g.kind === 'teacher' ? 'الأستاذ ' + esc(g.ownerName || '') : 'مجموعة طلاب'}`}</small></span>
+    <span class="end">${unreadOf(g, S.student.id) ? '<span class="dot inline"></span>' : ''}</span></button>`).join('')
+    : '<div class="empty-s">لم تنضم إلى أي مجموعة بعد. اطلب اليوزر من أستاذك ثم اضغط «انضمام».</div>';
+  $$('.grp-it', box).forEach((b) => (b.onclick = () => { sfx.tap(); openGroup(S.groups.find((x) => x.id === b.dataset.id)); }));
+}
+function joinDialog() {
+  const m = modal({
+    title: '➕ انضمام إلى مجموعة',
+    body: `<p class="modal-text">اكتب اليوزر الذي أعطاك إياه الأستاذ:</p>
+      <label class="field"><input id="jgU" dir="ltr" autocapitalize="off" autocomplete="off" placeholder="username"></label><div class="err" id="jgErr"></div>`,
+    actions: [{ label: 'إلغاء', kind: 'ghost' }, { label: 'انضمام', kind: 'primary', sticky: true, onClick: async (api, btn) => {
+      const u = normUser($('#jgU', m.root).value), err = $('#jgErr', m.root);
+      if (u.length < 3) { err.textContent = 'اكتب اليوزر بشكل صحيح'; sfx.error(); return false; }
+      btn.disabled = true; err.textContent = '';
+      try {
+        const g = await findGroupByUsername(u);
+        const r = await joinGroup(S.student, g);
+        if (!r.ok) { err.textContent = r.msg; sfx.error(); btn.disabled = false; return false; }
+        sfx.win(); toast(r.already ? 'أنت عضو في هذه المجموعة' : `انضممت إلى «${r.g.name}» 🎉`, 'ok');
+        setTimeout(() => openGroup({ ...r.g, memberIds: [...(r.g.memberIds || []), S.student.id] }), 250);
+      } catch { err.textContent = 'تعذّر الانضمام، تأكد من الإنترنت'; btn.disabled = false; return false; }
+    } }],
+  });
+}
 function paintDots() {
-  const any = Object.keys(S.dots).length > 0 || S.supDot;
+  const any = Object.keys(S.dots).length > 0 || S.supDot || S.groups.some((g) => unreadOf(g, S.student.id));
   const nb = $('#nav [data-tab=profile]');
   nb.querySelector('.dot')?.remove();
   if (any) nb.appendChild(el('<span class="dot"></span>'));
@@ -297,6 +345,10 @@ async function pageProfile(cur) {
     <span class="t">تواصل مع الدعم<small>مشكلة أو استفسار عن الاستخدام أو ملاحظة على التطبيق</small></span>
     <span class="end"><span class="dot inline" data-chat-dot="support" ${S.supDot ? '' : 'hidden'}></span></span></button>
 
+  <h3 class="section-title">👥 مجموعاتي</h3>
+  <div id="grpBox"></div>
+  <button class="btn block" id="joinGrp" style="margin-top:8px">➕ انضمام إلى مجموعة</button>
+
   <div style="margin-top:16px" id="notifBox">${notifyCardHTML()}</div>
   ${installCardHTML()}
 
@@ -316,6 +368,8 @@ async function pageProfile(cur) {
   $$('.chat-open').forEach((b) => (b.onclick = () => { sfx.tap(); openStudentChat(b.dataset.sid === 'institute' ? INSTITUTE : active.find((s) => s.id === b.dataset.sid)); }));
   bindInstallCard(view);
   bindBirthdayCard(S, () => go('profile', true));
+  paintGroups();
+  $('#joinGrp').onclick = () => { sfx.tap(); joinDialog(); };
   $('#supBtn').onclick = () => { sfx.tap(); openSupport(); };
   $('#ttlBtn').onclick = () => { sfx.tap(); editTitle(); };
   $('#cardBtn').onclick = () => { sfx.tap(); showCard({
@@ -458,23 +512,36 @@ async function pageBoard(cur) {
 }
 
 /* ───────────── announcements ───────────── */
+let newsSub = 'main';
 async function pageNews(cur) {
   const g = S.student.gender;
-  const [sch0, schOld, posts] = await Promise.all([
+  const [sch0, schOld, posts, subs, scope] = await Promise.all([
     getDoc(doc(db, 'settings', 'schedule_' + g)),
     getDoc(doc(db, 'settings', 'schedule')),                       // older single schedule (fallback)
-    getDocs(query(collection(db, 'announcements'), orderBy('at', 'desc'), limit(60))),
+    getDocs(query(collection(db, 'announcements'), orderBy('at', 'desc'), limit(150))),
+    loadSubjects(), loadTeacherScope(S.student.id).catch(() => S.scope),
   ]);
   if (!cur()) return;
+  S.scope = scope;
   const sch = sch0.exists() ? sch0 : schOld;
   const img = sch.exists() ? sch.data().img : null;
-  const list = rows(posts).filter((p) => inAudience(p, g)).slice(0, 30);
+  const active = subs.filter((s) => s.active);
+  const mineAll = rows(posts).filter((p) => inAudience(p, g) && scope.sees(p.teacher));
+  if (newsSub !== 'main' && !active.find((s) => s.id === newsSub)) newsSub = 'main';
+  const draw = () => {
+    const list = mineAll.filter((p) => (newsSub === 'main' ? !p.subjectId : p.subjectId === newsSub)).slice(0, 30);
+    const who = (p) => (p.subjectId ? 'إدارة مادة ' + esc(subjName[p.subjectId] || active.find((s) => s.id === p.subjectId)?.name || '') : 'إدارة المعهد');
+    $('#newsList').innerHTML = list.length ? list.map((p) => `<article class="post"><small class="muted">📣 ${who(p)}</small>${p.text ? `<p>${esc(p.text)}</p>` : ''}${p.img ? `<img src="${p.img}" alt="">` : ''}<time>${dayLabel(dkey(p.at))}</time></article>`).join('')
+      : '<div class="empty-s">لا توجد تبليغات حالياً</div>';
+    $$('#newsChips .chip').forEach((c) => c.classList.toggle('on', c.dataset.n === newsSub));
+  };
   view.innerHTML = `<h1 class="page-title">التبليغات 📣</h1>
     ${img ? `<div class="sched"><div class="cap"><span>📅 جدول الأسبوع</span><small class="muted">اضغط للتكبير</small></div><img id="schImg" src="${img}" alt="جدول الأسبوع"></div>`
       : '<div class="sched"><div class="cap"><span>📅 جدول الأسبوع</span></div><div class="empty-s">لم يُرفع الجدول بعد</div></div>'}
-    <h3 class="section-title">آخر التبليغات</h3>
-    ${list.length ? list.map((p) => `<article class="post">${p.text ? `<p>${esc(p.text)}</p>` : ''}${p.img ? `<img src="${p.img}" alt="">` : ''}<time>${dayLabel(dkey(p.at))}</time></article>`).join('')
-      : '<div class="empty-s">لا توجد تبليغات حالياً</div>'}`;
+    <div class="chips" id="newsChips" style="margin-top:12px"><button class="chip" data-n="main">📣 الرئيسية</button>${active.map((s) => `<button class="chip" data-n="${s.id}">${esc(s.emoji || '')} ${esc(s.name)}</button>`).join('')}</div>
+    <div id="newsList"></div>`;
+  $$('#newsChips .chip').forEach((c) => (c.onclick = () => { newsSub = c.dataset.n; sfx.tap(); draw(); }));
+  draw();
   ls.set('annSeen', S.latest.ann); ls.set('schSeen', S.latest.sch); refreshNewsDot();
   const si = $('#schImg');
   if (si) si.onclick = () => {
@@ -496,7 +563,7 @@ function startAlerts() {
   loadSubjects().then((l) => { subjName = Object.fromEntries(l.map((s) => [s.id, s.name])); }).catch(() => {});
   const g = S.student.gender;
   onSnapshot(query(collection(db, 'announcements'), orderBy('at', 'desc'), limit(15)), (snap) => {
-    const d = snap.docs.find((x) => inAudience(x.data(), g)); if (!d) return;
+    const d = snap.docs.find((x) => inAudience(x.data(), g) && S.scope.sees(x.data().teacher)); if (!d) return;
     const prev = ls.get('annAlerted');
     if (prev && prev !== d.id) alertUser('📣 تبليغ جديد', (d.data().text || 'صورة').slice(0, 90), { tag: 'ann-' + d.id });
     ls.set('annAlerted', d.id); S.latest.ann = d.id; refreshNewsDot();
@@ -509,7 +576,7 @@ function startAlerts() {
     S.latest.sch = at; refreshNewsDot();
   }, () => {});
   onSnapshot(query(collection(db, 'homeworks'), orderBy('createdAt', 'desc'), limit(15)), (snap) => {
-    const d = snap.docs.find((x) => inAudience(x.data(), g)); if (!d) return;
+    const d = snap.docs.find((x) => inAudience(x.data(), g) && S.scope.sees(x.data().teacher)); if (!d) return;
     const prev = ls.get('hwAlerted');
     if (prev && prev !== d.id) alertUser('✏️ واجب جديد', d.data().title || '', { tag: 'hw-' + d.id });
     ls.set('hwAlerted', d.id);

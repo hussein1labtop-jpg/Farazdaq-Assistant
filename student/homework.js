@@ -9,6 +9,7 @@ import {
 import { sfx, confetti, buzz } from './fx.js';
 import { loadSubjects } from './stats.js';
 import { isExpired } from './homework-clean.js';
+import { loadTeacherScope } from './groups.js';
 
 const MAX_PAGES = 10;
 const rows = (snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() }));
@@ -37,16 +38,17 @@ const BADGE = {
 };
 
 export async function pageHomework(cur, { student, view, go }) {
-  const [subjects, hwSnap, subSnap] = await Promise.all([
+  const [subjects, hwSnap, subSnap, scope] = await Promise.all([
     loadSubjects(),
     getDocs(query(collection(db, 'homeworks'), orderBy('createdAt', 'desc'), limit(40))),
     getDocs(query(collection(db, 'submissions'), where('studentId', '==', student.id))),
+    loadTeacherScope(student.id).catch(() => ({ sees: () => true })),     // only the homework of MY teachers
   ]);
   if (!cur()) return;
   const active = Object.fromEntries(subjects.filter((s) => s.active).map((s, i) => [s.id, { ...s, i }]));
   const mine = Object.fromEntries(rows(subSnap).map((s) => [s.homeworkId, s]));
   const allHw = rows(hwSnap);
-  const list = allHw.filter((h) => active[h.subjectId] && !isExpired(h) && inAudience(h, student.gender));
+  const list = allHw.filter((h) => active[h.subjectId] && !isExpired(h) && inAudience(h, student.gender) && scope.sees(h.teacher));
   const rank = (h) => ({ overdue: 0, redo: 1, todo: 2, submitted: 3, reviewed: 4, missed: 5 }[statusOf(h, mine[h.id])]);
   list.sort((a, b) => rank(a) - rank(b) || (a.dueDate || '9').localeCompare(b.dueDate || '9') || b.createdAt - a.createdAt);
 
@@ -55,7 +57,7 @@ export async function pageHomework(cur, { student, view, go }) {
     const due = dueLine(h, st);
     return `<button class="list-item hw-it" data-id="${h.id}" style="align-items:flex-start">
       <span class="av" style="background:${s.color || SUBJECT_COLORS[s.i % SUBJECT_COLORS.length]}">${esc(s.emoji || '📚')}</span>
-      <span class="grow"><span class="t">${esc(h.title)}</span><small>${esc(s.name)} · ${due}</small>
+      <span class="grow"><span class="t">${esc(h.title)}</span><small>${esc(s.name)}${h.teacherName ? ' · الأستاذ ' + esc(h.teacherName) : ''} · ${due}</small>
         ${sub && sub.grade ? `<small style="color:var(--ok);font-weight:700">الدرجة: ${esc(sub.grade)}</small>` : ''}</span>
       <span class="badge ${BADGE[st][1]}">${BADGE[st][0]}</span></button>`;
   };
