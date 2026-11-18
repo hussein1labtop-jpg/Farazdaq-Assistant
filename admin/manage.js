@@ -32,13 +32,13 @@ export const CHANNEL_LIST = ['girls', 'boys', 'all'].map((k) => ({ key: k, ...CH
 export function openChannel(audience, opts = {}) {
   const subject = opts.subject || null;                       // a subject's own announcements (published by its teachers)
   const ch = subject ? { icon: subject.emoji || '📣', title: 'تبليغات ' + subject.name, hint: 'تبليغات خاصة بمادة ' + subject.name + ' (تصل لطلاب أستاذها)' } : CHANNELS[audience];
-  let postImg = null, unsub = null, postAud = 'all';
+  let postImg = null, unsub = null, postAud = opts.aud || 'boys', draw = () => {}, lastRows = [];
   const ov = fullscreen(`<div class="chat">
     <header class="chat-head"><button class="icon-btn back" aria-label="رجوع">➜</button>
       <div class="chat-who"><span class="av" style="background:var(--surface2)">${ch.icon}</span><div><b>${ch.title}</b><small>${ch.hint}</small></div></div></header>
     ${audience === 'all' || subject ? '' : '<div class="chat-extra" id="schBox"></div>'}
     <div class="chat-list" id="feed"><div class="empty-s">جارٍ التحميل…</div></div>
-    ${subject ? '<div class="chips" id="pAud" style="padding:6px 10px 0"><button class="chip on" data-a="all">👥 الكل</button><button class="chip" data-a="boys">👦 ولد</button><button class="chip" data-a="girls">👧 بنات</button></div>' : ''}
+    ${subject ? '<div class="seg" id="pAud" style="margin:6px 10px 0"><button data-a="boys">👦 تبليغات الولد</button><button data-a="girls">👧 تبليغات البنات</button></div>' : ''}
     <div id="prevBox" style="padding:0 10px"></div>
     <footer class="chat-input"><button class="icon-btn" id="attach" aria-label="إرفاق صورة">🖼️</button>
       <textarea id="ptxt" rows="1" placeholder="${subject ? 'اكتب تبليغاً لطلاب ' + esc(subject.name) + '…' : 'اكتب تبليغاً لـ' + ch.title.replace('تبليغات ', '') + '…'}"></textarea>
@@ -50,7 +50,10 @@ export function openChannel(audience, opts = {}) {
 
   /* the live feed of this channel (older posts without a group count as "common") */
   unsub = onSnapshot(query(collection(db, 'announcements'), orderBy('at', 'desc'), limit(100)), (snap) => {
-    const list = rows(snap).filter((p) => (subject ? p.subjectId === subject.id && canSeeWork(p) : !p.subjectId && (p.audience || 'all') === audience)).reverse();
+    lastRows = rows(snap); draw();
+  });
+  draw = () => {
+    const list = lastRows.filter((p) => (subject ? p.subjectId === subject.id && canSeeWork(p) && (!opts.teacher || p.teacher === opts.teacher) && ((p.audience || 'all') === 'all' || p.audience === postAud) : !p.subjectId && (p.audience || 'all') === audience)).reverse();
     const audTag = (p) => (subject ? ` · ${p.audience === 'boys' ? '👦 ولد' : p.audience === 'girls' ? '👧 بنات' : '👥 الكل'}${p.teacherName ? ' · الأستاذ ' + esc(p.teacherName) : ''}` : '');
     feed.innerHTML = list.length ? list.map((p) => `<article class="post" style="max-width:92%">
         ${p.text ? `<p>${esc(p.text)}</p>` : ''}${p.img ? `<img src="${p.img}" alt="" data-z="1">` : ''}
@@ -59,7 +62,7 @@ export function openChannel(audience, opts = {}) {
     feed.scrollTop = feed.scrollHeight;
     $$('[data-del]', feed).forEach((b) => (b.onclick = async () => { if (await confirmBox('حذف هذا التبليغ؟', { danger: true, ok: 'حذف' })) await deleteDoc(doc(db, 'announcements', b.dataset.del)); }));
     $$('img[data-z]', feed).forEach((im) => (im.onclick = () => { const z = el(`<div class="zoom"><img src="${im.src}" alt=""></div>`); z.onclick = () => z.remove(); document.body.appendChild(z); }));
-  });
+  };
 
   $('#attach', ov).onclick = async () => {
     const f = await pickFile(); if (!f) return;
@@ -77,7 +80,9 @@ export function openChannel(audience, opts = {}) {
     } catch { toast('تعذّر النشر', 'bad'); }
   };
 
-  $$('#pAud .chip', ov).forEach((c) => (c.onclick = () => { postAud = c.dataset.a; sfx.tap(); $$('#pAud .chip', ov).forEach((x) => x.classList.toggle('on', x === c)); }));
+  const paintAud = () => $$('#pAud button', ov).forEach((x) => x.classList.toggle('on', x.dataset.a === postAud));
+  $$('#pAud button', ov).forEach((c) => (c.onclick = () => { postAud = c.dataset.a; sfx.tap(); paintAud(); draw(); }));
+  paintAud();
 
   /* the weekly schedule pinned for this group */
   if (audience !== 'all' && !subject) {

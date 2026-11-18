@@ -15,6 +15,7 @@ import { pageStudents } from './students.js';
 import { CHANNEL_LIST, openChannel, openBoard, openUsers, openSubjects } from './manage.js';
 import { openHomework } from './homework.js';
 import { openGroups } from './groups-admin.js';
+import { openTeachers } from './teachers.js';
 import { alertUser, notifyCardHTML, bindNotifyCard, resumePush } from './notify.js';
 import { showUpdateNotice } from './updates.js';
 import { installCardHTML, bindInstallCard } from './install.js';
@@ -269,7 +270,8 @@ function renderChatTop() {
 async function pageMore() {
   const items = [
     ['✏️', 'الواجبات', 'نشر الواجبات واستلام تسليمات الطلاب وتصحيحها', openHomework, true],
-    ['👥', 'المجموعات', 'مجموعات الطلاب: إنشاء، إضافة، كتم، طرد، وطلبات الملصقات', openGroups, canMakeGroups() || isSuper()],
+    ['👨‍🏫', 'الأساتذة', 'مجموعات كل أستاذ وتبليغاته (ولد وبنات منفصلة)', openTeachers, isSuper()],
+    ['👥', 'المجموعات', 'مجموعات الطلاب: إنشاء، إضافة، كتم، طرد، وطلبات الملصقات', () => openGroups(), canMakeGroups() || isSuper()],
     ...mySubjects().map((sb) => [sb.emoji || '📣', 'تبليغات ' + sb.name, 'تبليغات خاصة بمادة ' + sb.name + ' تصل لطلاب أستاذها', () => openChannel('all', { subject: sb }), true]),
     ...CHANNEL_LIST.map((c) => [c.icon, c.title, c.key === 'all' ? 'تبليغات تصل تلقائياً للولد والبنات معاً' : `نشر التبليغات وجدول الأسبوع لمجموعة ${c.key === 'boys' ? 'الولد' : 'البنات'}`, () => openChannel(c.key), true]),
     ['🏆', 'قائمة المتميزين', 'مراجعة قائمة الشهر وتبديل الأسماء', openBoard, true],

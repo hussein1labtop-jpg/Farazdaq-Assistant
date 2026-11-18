@@ -14,25 +14,32 @@ export const openGroup = (g) => openGroupChat(g, ctxOf());
 const genName = () => { const a = new Uint8Array(4); crypto.getRandomValues(a); return 'g' + [...a].map((x) => x.toString(36).padStart(2, '0')).join('').slice(0, 7); };
 
 /* ═════════════ my groups ═════════════ */
-export function openGroups() {
+export function openGroups(opts = {}) {
   loadAllAvatars().catch(() => {});
-  subPage('المجموعات', (body, ov) => {
-    let groups = [], reqs = [];
+  subPage(opts.title || 'المجموعات', (body, ov) => {
+    let groups = [], reqs = [], tab = opts.aud || 'boys';
     const mineReq = (r) => isSuper() || r.approver === S.admin.username || (!!S.admin.teacherOf && r.approver === S.admin.teacherOf);
     const draw = () => {
-      const list = groups.filter(isGroupManager).sort((a, b) => (b.lastMsgAt || b.createdAt || 0) - (a.lastMsgAt || a.createdAt || 0));
+      const all = groups.filter(isGroupManager).filter((g) => !opts.owner || g.ownerUsername === opts.owner);
+      const cnt = (a) => all.filter((g) => g.audience === a).length;
+      const hd = (g) => (g.kind === 'teacher' ? '👨‍🏫 ' + (g.ownerName || '') : '🎓 مجموعات طلاب فقط');
+      const split = isSuper() && !opts.owner;
+      const list = all.filter((g) => g.audience === tab).sort((a, b) => (split ? hd(a).localeCompare(hd(b), 'ar') : 0) || (b.lastMsgAt || b.createdAt || 0) - (a.lastMsgAt || a.createdAt || 0));
       const rq = reqs.filter(mineReq);
       body.innerHTML = `
+        <div class="seg" id="aTabs"><button data-a="boys" class="${tab === 'boys' ? 'on' : ''}">👦 ولد (${cnt('boys')})</button><button data-a="girls" class="${tab === 'girls' ? 'on' : ''}">👧 بنات (${cnt('girls')})</button></div>
         ${canMakeGroups() ? '<button class="btn primary block" id="newG" style="margin-bottom:10px">+ مجموعة جديدة</button>' : ''}
         ${rq.length ? `<button class="list-item" id="stkReq" style="margin-bottom:10px;background:rgba(201,181,122,.18)"><span class="av" style="background:var(--surface2)">🖼️</span><span class="t">طلبات الملصقات<small>${rq.length} طلب بانتظار موافقتك</small></span><span class="end"><span class="dot inline"></span></span></button>` : ''}
-        ${list.length ? list.map((g) => {
+        ${list.length ? list.map((g, i) => {
+          const head = split && (i === 0 || hd(list[i - 1]) !== hd(g)) ? `<h3 class="section-title">${esc(hd(g))}</h3>` : '';
           const lv = Object.keys(g.leaveReq || {}).filter((id) => (g.memberIds || []).includes(id)).length;
-          return `<button class="list-item grp-it" data-id="${g.id}">${groupAvatar(g)}
+          return head + `<button class="list-item grp-it" data-id="${g.id}">${groupAvatar(g)}
             <span class="t">${esc(g.name)}<small>${audIcon(g.audience)} ${audName(g.audience)} · ${(g.memberIds || []).length} عضو · <span dir="ltr">${esc(g.username)}</span>${isSuper() && g.ownerUsername !== S.admin.username ? ' · ' + esc(g.ownerName || '') : ''}</small>
             ${g.lastMsg ? `<small>${esc((g.lastByName ? g.lastByName + ': ' : '') + g.lastMsg)}</small>` : ''}</span>
             <span class="end">${lv ? `<span class="badge warn">🚪 ${lv}</span>` : ''}${unreadOf(g, S.admin.username) ? '<span class="dot inline"></span>' : ''}</span></button>`;
-        }).join('') : '<div class="empty"><span class="big">👥</span>لا توجد مجموعات بعد.<br>أنشئ مجموعة وأعطِ طلابك اليوزر ليدخلوا.</div>'}
+        }).join('') : '<div class="empty"><span class="big">👥</span>لا توجد مجموعات ' + (tab === 'girls' ? 'للبنات' : 'للأولاد') + ' بعد.<br>أنشئ مجموعة وأعطِ طلابك اليوزر ليدخلوا.</div>'}
         <p class="muted" style="font-size:12px;margin-top:14px">هذه المجموعات تظهر لك وللطلاب الأعضاء فقط، ولا تظهر لبقية الإدارة. رسائلها تُحذف بعد 48 ساعة ما عدا ما تثبّته 📌.</p>`;
+      $$('#aTabs button', body).forEach((b) => (b.onclick = () => { tab = b.dataset.a; sfx.tap(); draw(); }));
       const ng = $('#newG', body); if (ng) ng.onclick = () => createDialog();
       const sr = $('#stkReq', body); if (sr) sr.onclick = () => stickerRequests(rq);
       $$('.grp-it', body).forEach((b) => (b.onclick = () => { sfx.tap(); openGroup(groups.find((g) => g.id === b.dataset.id)); }));
